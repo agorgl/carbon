@@ -35,8 +35,17 @@ int main(int argc, char* argv[])
     (void) argc;
     (void) argv;
 
-    /* Call sample Carbon function */
-    foo();
+    /* Initialize internal library structures */
+    carbon_setup();
+
+    /* Create engine instance with given params */
+    engine engine = engine_create(&(engine_params){});
+
+    /* Run */
+    engine_run(engine);
+
+    /* Cleanup allocated resources */
+    engine_destroy(engine);
 
     return 0;
 }
