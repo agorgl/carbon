@@ -31,6 +31,8 @@
 #ifndef _CARBON_H_
 #define _CARBON_H_
 
-void foo();
+#include "engine.h"
+
+void carbon_setup();
 
 #endif /* ! _CARBON_H_ */
