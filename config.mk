@@ -1,0 +1,1 @@
+PRJTYPE = StaticLib
