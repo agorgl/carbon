@@ -111,3 +111,5 @@ double time_sec(uint64_t ticks)  { return (double)ticks / 1000000000.0; }
 double time_msec(uint64_t ticks) { return (double)ticks / 1000000.0; }
 double time_usec(uint64_t ticks) { return (double)ticks / 1000.0; }
 double time_nsec(uint64_t ticks) { return (double)ticks; }
+
+uint64_t time_ticks(double msecs) { return (uint64_t)(msecs * 1000000.0); }

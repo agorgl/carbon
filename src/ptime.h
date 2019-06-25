@@ -79,4 +79,10 @@ double time_msec(uint64_t ticks);
 double time_usec(uint64_t ticks);
 double time_nsec(uint64_t ticks);
 
+/*
+ * Converts milliseconds to tick value. Usefull for more
+ * time releated arithmetics, like repetitive subtraction.
+ */
+uint64_t time_ticks(double msecs);
+
 #endif /* ! _PTIME_H_ */
