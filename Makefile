@@ -655,7 +655,7 @@ $(foreach ext, cpp cxx cc mm, $(call compile-rule, $(ext), $$(CXXCOMPILE_$(D)), 
 # Generate compilation database entries
 $(foreach cu, $(SRC_$(D)), $(call compile-database-entry, $(cu), \
 	$$(subst $$@,$(BUILDDIR)/cdb/$(cu)$(OBJEXT), \
-		$$(subst $$<,$(cu), \
+		$$(subst $$<, $(cu), \
 			$$(if $$(filter c m, $$(patsubst .%,%,$$(suffix $(cu)))), \
 				$$(CCOMPILE_$(D)), \
 				$$(CXXCOMPILE_$(D)))))) \
