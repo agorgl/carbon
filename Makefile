@@ -441,8 +441,7 @@ DEPSDIR_$(D) := $(DP)deps
 # Implicit dependencies
 DEPS_$(D) := $$(call gatherprojs, $$(DEPSDIR_$(D)))
 # Explicit dependencies
-MDPS_$(D) := $$(foreach md, $$(MOREDEPS_$(D)), $$(or $$(call canonical_path_cur, $(DP)/$$(md)), .))
-DEPS_$(D) += $$(MDPS_$(D)) $$(foreach md, $$(MDPS_$(D)), $$(DEPS_$$(md)))
+DEPS_$(D) += $$(foreach md, $$(MOREDEPS_$(D)), $$(or $$(call canonical_path_cur, $(DP)/$$(md)), .))
 # Append dependency pairs from local dependencies
 undefine PKGS
 PKGS :=
@@ -470,7 +469,8 @@ LIBPATHS_$(D)    := $$(strip $$(foreach libdir,\
 									$$(foreach dep, $$(DEPS_$(D)), $$(dep)/lib) \
 									$$(ADDLIBDIR_$(D)),\
 								$$(libdir)/$(strip $(VARIANT))) \
-								$$(foreach extdep, $$(EXTDEPPATHS_$(D)), $$(extdep)/lib))
+								$$(foreach extdep, $$(EXTDEPPATHS_$(D)), $$(extdep)/lib) \
+								$$(foreach dep, $$(DEPS_$(D)), $$(LIBPATHS_$$(dep))))
 
 # Libraries from dependencies
 LIBS_$(D)        := $$(LIBS_$(D)) $$(foreach dep, $$(DEPS_$(D)), $$(LIBS_$$(dep)))
