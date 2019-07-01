@@ -4,10 +4,12 @@
 #include "mainloop.h"
 #include "window.h"
 #include "opengl.h"
+#include "renderer.h"
 
 struct engine {
     mainloop_params ml_params;
     window wnd;
+    renderer renderer;
 };
 
 engine engine_create(const engine_params* params)
@@ -41,18 +43,19 @@ void engine_update(engine e, float dt)
 void engine_render(engine e, float dt)
 {
     (void) dt;
-    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    renderer_frame(e->renderer);
     window_swap_buffers(e->wnd);
 }
 
 void engine_run(engine e)
 {
+    const int width = 1280, height = 720;
+
     /* Create window */
     window wnd = window_create((window_params){
         .title  = "Carbon",
-        .width  = 1280,
-        .height = 720,
+        .width  = width,
+        .height = height,
         .mode   = 0,
         .ctx_params = {
             .type    = OPENGL,
@@ -75,6 +78,12 @@ void engine_run(engine e)
         .userdata = e
     });
 
+    /* Create renderer instance */
+    e->renderer = renderer_create(&(renderer_params){
+        .width  = width,
+        .height = height
+    });
+
     /* Run main loop */
     e->ml_params = (mainloop_params){
         .update_callback = (mainloop_update_fn) engine_update,
@@ -83,6 +92,9 @@ void engine_run(engine e)
         .userdata = e
     };
     mainloop(&e->ml_params);
+
+    /* Destroy renderer instance */
+    renderer_destroy(e->renderer);
 
     /* Close window */
     window_destroy(e->wnd);
