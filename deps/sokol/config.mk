@@ -1,0 +1,2 @@
+PRJTYPE  = StaticLib
+MOREDEPS = ../glad
