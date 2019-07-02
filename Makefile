@@ -463,7 +463,9 @@ INCPATHS_$(D)    := $$(strip $(DP)include \
 										$$(filter-out $$(DEPS_$(D)), $$(wildcard $$(DEPSDIR_$(D))/*)), \
 											$$(dep)/include) \
 						$$(ADDINCS_$(D)) \
-						$$(foreach extdep, $$(EXTDEPPATHS_$(D)), $$(extdep)/include))
+						$$(foreach extdep, $$(EXTDEPPATHS_$(D)), $$(extdep)/include) \
+						$$(foreach dep, $$(DEPS_$(D)), $$(INCPATHS_$$(dep))))
+
 # Library search paths
 LIBPATHS_$(D)    := $$(strip $$(foreach libdir,\
 									$$(foreach dep, $$(DEPS_$(D)), $$(dep)/lib) \
