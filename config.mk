@@ -1,3 +1,3 @@
 PRJTYPE = StaticLib
-LIBS = sokol glad glfw
+LIBS = flecs sokol glad glfw
 MCFLAGS = -Wno-missing-field-initializers
