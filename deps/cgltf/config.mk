@@ -1,0 +1,2 @@
+PRJTYPE = StaticLib
+VERSION = 1.2
