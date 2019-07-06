@@ -32,6 +32,11 @@
 #define _CARBON_H_
 
 #include "engine.h"
+#include "input.h"
+#include "window.h"
+#include "linmath.h"
+#include "gfx.h"
+#include "components.h"
 
 void carbon_setup();
 
