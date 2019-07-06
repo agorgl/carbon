@@ -581,6 +581,12 @@ BANNERFILE_$(D) := $(BUILDDIR)/banners/banner_$(subst /,_,$(D))
 # Main build rule
 build_$(D): $$(MASTEROUT_$(D))
 
+# Clean rule
+clean_$(D):
+	@echo Cleaning $(DP)...
+	@$(call remove, $$(BANNERFILE_$(D)))
+	@$(call rmdir, $(BUILDDIR)/$(VARIANT)/$(SRCDIR_$(D)))
+
 # Executes target
 run_$(D): build_$(D)
 	@echo Executing $$(MASTEROUT_$(D)) ...
@@ -611,7 +617,9 @@ $$(OBJ_$(D)): | $$(BANNERFILE_$(D))
 
 # Print build debug info
 showvars_$(D): $$(BANNERFILE_$(D))
+	@echo ------------------------------------------------------------
 	@echo MASTEROUT: $$(MASTEROUT_$(D))
+	@echo ------------------------------------------------------------
 	@echo SRCDIR:    $$(SRCDIR_$(D))
 	@echo SRC:       $$(SRC_$(D))
 	@echo DEPS:      $$(DEPS_$(D))
@@ -625,6 +633,7 @@ showvars_$(D): $$(BANNERFILE_$(D))
 	@echo INSTALL:   $$(INSTALL_PREFIX_$(D)): $$(INSTALL_FILES_$(D))
 	@echo EXTDEPS:   $$(EXTDEPS_$(D))
 	@echo EXTPATHS:  $$(EXTDEPPATHS_$(D))
+	@echo ------------------------------------------------------------
 
 # Show include search paths for current subproject
 showincpaths_$(D):
@@ -695,8 +704,9 @@ undefine SILENT
 $(foreach subproj, $(NONSILENT_SUBPROJS), $(eval $(call gen-build-rules, $(subproj))))
 
 # Aliases
-build: build_.
 run: run_.
+build: build_.
+clean: clean_.
 install: install_.
 showvars: showvars_.
 showvars_all: $(addprefix showvars_, $(SUBPROJS))
@@ -718,13 +728,13 @@ compile_db:
 	$(info $($(lastword $(DB_ENTRY_LIST))))
 	$(info ])
 
-# Cleanup rule
-clean:
+# Full cleanup rule
+distclean:
 	@echo Cleaning...
 	@$(call rmdir, $(BUILDDIR))
 
 # Don't create dependencies when we're cleaning
-NOHDEPSGEN = clean
+NOHDEPSGEN = clean distclean
 ifeq (0, $(words $(findstring $(MAKECMDGOALS), $(NOHDEPSGEN))))
 	# GNU Make attempts to (re)build the file it includes
 	HDEPS = $(foreach subproj, $(SUBPROJS), $(HDEPS_$(subproj)))
@@ -738,12 +748,13 @@ endif
 .SUFFIXES:
 
 # Non file targets
-PHONYRULETYPES := build run install showvars showincpaths showdefines
+PHONYRULETYPES := build clean run install showvars showincpaths showdefines
 PHONYPREREQS := $(foreach ruletype, $(PHONYRULETYPES), $(addprefix $(ruletype)_, $(SUBPROJS))) \
 		run \
 		install \
 		showvars \
 		showvars_all \
 		compile_db \
-		clean
+		clean \
+		distclean
 .PHONY: $(PHONYPREREQS)
