@@ -28,9 +28,24 @@
 /*   ' ') '( (/                                                                                                      */
 /*     '   '  `                                                                                                      */
 /*********************************************************************************************************************/
-#ifndef _ECS_H_
-#define _ECS_H_
+#ifndef _COMPONENTS_H_
+#define _COMPONENTS_H_
 
 #include <flecs.h>
+#include "linmath.h"
 
-#endif /* ! _ECS_H_ */
+typedef struct transform {
+    /* Individual components */
+    struct {
+        vec3 scale;
+        quat rotation;
+        vec3 translation;
+    } pose;
+    /* Indicates that cached matrices should be refreshed */
+    int dirty;
+    /* Cached combined matrices */
+    mat4 local_mat;
+    mat4 world_mat;
+} transform;
+
+#endif /* ! _COMPONENTS_H_ */
