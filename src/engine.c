@@ -45,20 +45,28 @@ static void on_key(window wnd, int key, int scancode, int action, int mods)
 
 void engine_update(engine e, float dt)
 {
-    (void) dt;
+    /* Poll events, and call event callbacks */
     window_update(e->wnd);
+
+    /* Fire ecs systems */
+    ecs_progress(e->world, dt);
 }
 
 void engine_render(engine e, float dt)
 {
     (void) dt;
-    renderer_inputs ri = {
-        .objects = (struct renderer_object[]){
-            [0].wrld_mat = mat4_id()
-        },
-        .num_objects = 1
-    };
+
+    /* Gather data needed by renderer from the ecs */
+    renderer_inputs ri = {};
+    ecs_prepare_renderer_inputs(e->world, &ri);
+
+    /* Render the frame */
     renderer_frame(e->renderer, ri);
+
+    /* Free intermediate renderer input data */
+    ecs_free_render_inputs(e->world, &ri);
+
+    /* Show backbuffer */
     window_swap_buffers(e->wnd);
 }
 
