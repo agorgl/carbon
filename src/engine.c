@@ -5,18 +5,27 @@
 #include "window.h"
 #include "opengl.h"
 #include "renderer.h"
+#include "ecs.h"
 
 struct engine {
     mainloop_params ml_params;
     window wnd;
     renderer renderer;
+    ecs_world_t* world;
 };
 
 engine engine_create(const engine_params* params)
 {
     (void) params;
     engine e = calloc(1, sizeof(*e));
+    e->world = ecs_init();
+    ecs_setup_internal(e->world);
     return e;
+}
+
+ecs_world_t* engine_world(engine e)
+{
+    return e->world;
 }
 
 static void on_opengl_error(void* userdata, const char* msg)
@@ -113,5 +122,6 @@ void engine_stop(engine e)
 
 void engine_destroy(engine e)
 {
+    ecs_fini(e->world);
     free(e);
 }

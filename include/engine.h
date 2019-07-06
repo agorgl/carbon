@@ -32,6 +32,7 @@
 #define _ENGINE_H_
 
 #include <stdbool.h>
+#include "components.h"
 
 /* Engine initialization parameters */
 typedef struct engine_params {
@@ -46,6 +47,11 @@ typedef struct engine* engine;
  * Instance must be destroyed to release allocated resources
  */
 engine engine_create(const engine_params* params);
+
+/*
+ * Retrieves associated world instance for given engine
+ */
+ecs_world_t* engine_world(engine e);
 
 /*
  * Runs engine mainloop in current thread.
