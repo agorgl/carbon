@@ -221,9 +221,8 @@ renderer renderer_create(renderer_params* params)
     return r;
 }
 
-void renderer_frame(renderer r)
+void renderer_frame(renderer r, renderer_inputs ri)
 {
-    static params_t vs_params;
     static float rx = 0.0f, ry = 0.0f;
 
     /* View-projection matrix */
@@ -237,7 +236,6 @@ void renderer_frame(renderer r)
     mat4 model = mat4_mul_mat4(
         mat4_rotation_x(radians(rx)),
         mat4_rotation_y(radians(ry)));
-    vs_params.mvp = mat4_mul_mat4(view_proj, model);
 
     /*
      * Offscreen pass, this renders a rotating,
@@ -248,20 +246,23 @@ void renderer_frame(renderer r)
     gfx_begin_pass(r->offscreen_pass, &(gfx_pass_action){
         .colors[0] = { .action = GFX_ACTION_CLEAR, .val = { 0.0f, 0.0f, 0.0f, 1.0f } }
     });
-
-    /* Resource bindings for offscreen rendering */
     gfx_apply_pipeline(r->offscreen_pip);
-    gfx_apply_bindings(&(gfx_bindings){
-        .vertex_buffers[0] = r->vbuf,
-        .index_buffer = r->ibuf
-    });
-
-    gfx_apply_uniforms(GFX_SHADERSTAGE_VS, 0, &vs_params, sizeof(vs_params));
-    gfx_draw(0, 36, 1);
+    for (size_t i = 0; i < ri.num_objects; ++i) {
+        /* Resource bindings for offscreen rendering */
+        gfx_apply_bindings(&(gfx_bindings){
+            .vertex_buffers[0] = r->vbuf,
+            .index_buffer = r->ibuf
+        });
+        /* Uniforms for offscreen rendering */
+        params_t vs_params = {.mvp = mat4_mul_mat4(view_proj, model)};
+        gfx_apply_uniforms(GFX_SHADERSTAGE_VS, 0, &vs_params, sizeof(vs_params));
+        /* Draw */
+        gfx_draw(0, 36, 1);
+    }
     gfx_end_pass();
 
     /*
-     * And the default pass, this renders a textured cube, using the
+     * Default pass, this renders a textured cube, using the
      * offscreen render target as texture image
      */
 
@@ -272,18 +273,20 @@ void renderer_frame(renderer r)
             .val = { 0.0f, 0.25f, 1.0f, 1.0f }
         }
     }, r->params.width, r->params.height);
-
-    /* And the resource bindings for the default pass where a textured cube will
-     * rendered, note how the render-target image is used as texture here */
     gfx_apply_pipeline(r->default_pip);
-    gfx_apply_bindings(&(gfx_bindings){
-        .vertex_buffers[0] = r->vbuf,
-        .index_buffer      = r->ibuf,
-        .fs_images[0]      = r->color_img
-    });
-
-    gfx_apply_uniforms(GFX_SHADERSTAGE_VS, 0, &vs_params, sizeof(vs_params));
-    gfx_draw(0, 36, 1);
+    for (size_t i = 0; i < ri.num_objects; ++i) {
+        mat4 modl = mat4_mul_mat4(ri.objects[i].wrld_mat, model);
+        /* And the resource bindings for the default pass where a textured cube will
+         * rendered, note how the render-target image is used as texture here */
+        gfx_apply_bindings(&(gfx_bindings){
+            .vertex_buffers[0] = r->vbuf,
+            .index_buffer      = r->ibuf,
+            .fs_images[0]      = r->color_img
+        });
+        params_t vs_params = {.mvp = mat4_mul_mat4(view_proj, modl)};
+        gfx_apply_uniforms(GFX_SHADERSTAGE_VS, 0, &vs_params, sizeof(vs_params));
+        gfx_draw(0, 36, 1);
+    }
     gfx_end_pass();
 
     /* Commit everything */

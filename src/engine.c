@@ -43,7 +43,13 @@ void engine_update(engine e, float dt)
 void engine_render(engine e, float dt)
 {
     (void) dt;
-    renderer_frame(e->renderer);
+    renderer_inputs ri = {
+        .objects = (struct renderer_object[]){
+            [0].wrld_mat = mat4_id()
+        },
+        .num_objects = 1
+    };
+    renderer_frame(e->renderer, ri);
     window_swap_buffers(e->wnd);
 }
 

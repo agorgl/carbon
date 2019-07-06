@@ -31,6 +31,9 @@
 #ifndef _RENDERER_H_
 #define _RENDERER_H_
 
+#include <stdlib.h>
+#include <linmath.h>
+
 typedef struct renderer* renderer;
 
 typedef struct renderer_params {
@@ -38,8 +41,17 @@ typedef struct renderer_params {
     int height;
 } renderer_params;
 
+typedef struct renderer_object {
+    mat4 wrld_mat;
+} renderer_object;
+
+typedef struct renderer_inputs {
+    renderer_object* objects;
+    size_t num_objects;
+} renderer_inputs;
+
 renderer renderer_create(renderer_params* params);
-void renderer_frame(renderer r);
+void renderer_frame(renderer r, renderer_inputs ri);
 void renderer_destroy(renderer r);
 
 #endif /* ! _RENDERER_H_ */
