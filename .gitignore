@@ -138,6 +138,12 @@ tags
 # Persistent undo
 [._]*.un~
 
+# Local .vimrc
+.lvimrc
+
+# Vimspector configuration
+.vimspector.json
+
 #
 # - Visual Studio -
 #
