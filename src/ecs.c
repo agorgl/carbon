@@ -65,18 +65,17 @@ static void prepare_renderer_inputs_system(ecs_rows_t* rows)
 {
     ECS_COLUMN(rows, transform, tarr, 1);
     renderer_inputs* ri = rows->param;
+    renderer_scene* rs = &ri->scene;
 
     /* Extend objects array */
-    size_t offset = ri->num_objects;
-    ri->num_objects += rows->count;
-    ri->objects = realloc(ri->objects, ri->num_objects * sizeof(*ri->objects));
-    memset(ri->objects + offset, 0, rows->count * sizeof(*ri->objects));
+    size_t offset = rs->num_nodes;
+    rs->num_nodes += rows->count;
 
     /* Copy over data */
     for (uint32_t i = 0; i < rows->count; ++i) {
         transform* t = &tarr[i];
-        renderer_object* ro = &ri->objects[offset + i];
-        ro->wrld_mat = t->world_mat;
+        renderer_node* rn = &rs->nodes[offset + i];
+        rn->transform = t->world_mat;
     }
 }
 
@@ -89,7 +88,7 @@ void ecs_prepare_renderer_inputs(ecs_world_t* world, renderer_inputs* ri)
 void ecs_free_render_inputs(ecs_world_t* world, renderer_inputs* ri)
 {
     (void) world;
-    free(ri->objects);
+    (void) ri;
 }
 
 void ecs_setup_internal(ecs_world_t* world)

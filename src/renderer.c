@@ -247,7 +247,7 @@ void renderer_frame(renderer r, renderer_inputs ri)
         .colors[0] = { .action = GFX_ACTION_CLEAR, .val = { 0.0f, 0.0f, 0.0f, 1.0f } }
     });
     gfx_apply_pipeline(r->offscreen_pip);
-    for (size_t i = 0; i < ri.num_objects; ++i) {
+    for (size_t i = 0; i < ri.scene.num_nodes; ++i) {
         /* Resource bindings for offscreen rendering */
         gfx_apply_bindings(&(gfx_bindings){
             .vertex_buffers[0] = r->vbuf,
@@ -274,8 +274,8 @@ void renderer_frame(renderer r, renderer_inputs ri)
         }
     }, r->params.width, r->params.height);
     gfx_apply_pipeline(r->default_pip);
-    for (size_t i = 0; i < ri.num_objects; ++i) {
-        mat4 modl = mat4_mul_mat4(ri.objects[i].wrld_mat, model);
+    for (size_t i = 0; i < ri.scene.num_nodes; ++i) {
+        mat4 modl = mat4_mul_mat4(ri.scene.nodes[i].transform, model);
         /* And the resource bindings for the default pass where a textured cube will
          * rendered, note how the render-target image is used as texture here */
         gfx_apply_bindings(&(gfx_bindings){
