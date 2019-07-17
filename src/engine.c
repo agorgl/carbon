@@ -11,6 +11,7 @@ struct engine {
     mainloop_params ml_params;
     window wnd;
     renderer renderer;
+    resmngr rmgr;
     ecs_world_t* world;
 };
 
@@ -68,11 +69,19 @@ engine engine_create(const engine_params* params)
         .height = height
     });
 
+    /* Create resource manager instance */
+    e->rmgr = resmngr_create();
+
     /* Create world instance */
     e->world = ecs_init();
     ecs_setup_internal(e->world);
 
     return e;
+}
+
+resmngr engine_resmngr(engine e)
+{
+    return e->rmgr;
 }
 
 ecs_world_t* engine_world(engine e)
@@ -126,6 +135,9 @@ void engine_stop(engine e)
 
 void engine_destroy(engine e)
 {
+    /* Destroy resource manager instance */
+    resmngr_destroy(e->rmgr);
+
     /* Destroy world instance */
     ecs_fini(e->world);
 

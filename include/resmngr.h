@@ -28,51 +28,27 @@
 /*   ' ') '( (/                                                                                                      */
 /*     '   '  `                                                                                                      */
 /*********************************************************************************************************************/
-#ifndef _ENGINE_H_
-#define _ENGINE_H_
+#ifndef _RESMNGR_H_
+#define _RESMNGR_H_
 
-#include <stdbool.h>
-#include "components.h"
+#include <slot_map.h>
 
-/* Engine initialization parameters */
-typedef struct engine_params {
-    /* TODO */
-} engine_params;
+#define RID_INVALID SM_INVALID_KEY
 
-/* Engine opaque type */
-typedef struct engine* engine;
+/* Resource manager type */
+typedef struct resmngr* resmngr;
 
-/*
- * Creates an engine instance with the given parameters
- * Instance must be destroyed to release allocated resources
- */
-engine engine_create(const engine_params* params);
+/* Resource handle */
+typedef sm_key rid;
 
-/*
- * Retrieves associated world instance for given engine
- */
-ecs_world_t* engine_world(engine e);
+/* Main interface */
+resmngr resmngr_create();
+int resmngr_handle_valid(rid r);
+void resmngr_destroy(resmngr rm);
 
-/*
- * Retrieves associated resource manager instance for given engine
- */
-resmngr engine_resmngr(engine e);
+/* Model resources */
+rid resmngr_model_sample(resmngr rm);
+void* resmngr_model_lookup(resmngr rm, rid r);
+void resmngr_model_delete(resmngr rm, rid r);
 
-/*
- * Runs engine mainloop in current thread.
- * Can be stopped by calling engine_stop from any thread
- */
-void engine_run(engine e);
-
-/*
- * Stops given engine instance
- */
-void engine_stop(engine e);
-
-/*
- * Frees allocated resources of given engine instance.
- * Must be called after stopping the engine instance
- */
-void engine_destroy(engine e);
-
-#endif /* ! _ENGINE_H_ */
+#endif /* ! _RESMNGR_H_ */
