@@ -9,8 +9,6 @@ typedef struct renderer {
     gfx_image color_img;
     gfx_image depth_img;
     gfx_pass offscreen_pass;
-    gfx_buffer vbuf;
-    gfx_buffer ibuf;
     gfx_shader offscreen_shd;
     gfx_shader default_shd;
     gfx_pipeline offscreen_pip;
@@ -46,59 +44,6 @@ renderer renderer_create(renderer_params* params)
     gfx_pass offscreen_pass = gfx_make_pass(&(gfx_pass_desc){
         .color_attachments[0].image = color_img,
         .depth_stencil_attachment.image = depth_img
-    });
-
-    /* Cube vertex buffer with positions, colors and tex coords */
-    float vertices[] = {
-        /* pos                  color                       uvs */
-        -1.0f, -1.0f, -1.0f,    1.0f, 0.5f, 0.5f, 1.0f,     0.0f, 0.0f,
-         1.0f, -1.0f, -1.0f,    1.0f, 0.5f, 0.5f, 1.0f,     1.0f, 0.0f,
-         1.0f,  1.0f, -1.0f,    1.0f, 0.5f, 0.5f, 1.0f,     1.0f, 1.0f,
-        -1.0f,  1.0f, -1.0f,    1.0f, 0.5f, 0.5f, 1.0f,     0.0f, 1.0f,
-
-        -1.0f, -1.0f,  1.0f,    0.5f, 1.0f, 0.5f, 1.0f,     0.0f, 0.0f,
-         1.0f, -1.0f,  1.0f,    0.5f, 1.0f, 0.5f, 1.0f,     1.0f, 0.0f,
-         1.0f,  1.0f,  1.0f,    0.5f, 1.0f, 0.5f, 1.0f,     1.0f, 1.0f,
-        -1.0f,  1.0f,  1.0f,    0.5f, 1.0f, 0.5f, 1.0f,     0.0f, 1.0f,
-
-        -1.0f, -1.0f, -1.0f,    0.5f, 0.5f, 1.0f, 1.0f,     0.0f, 0.0f,
-        -1.0f,  1.0f, -1.0f,    0.5f, 0.5f, 1.0f, 1.0f,     1.0f, 0.0f,
-        -1.0f,  1.0f,  1.0f,    0.5f, 0.5f, 1.0f, 1.0f,     1.0f, 1.0f,
-        -1.0f, -1.0f,  1.0f,    0.5f, 0.5f, 1.0f, 1.0f,     0.0f, 1.0f,
-
-         1.0f, -1.0f, -1.0f,    1.0f, 0.5f, 0.0f, 1.0f,     0.0f, 0.0f,
-         1.0f,  1.0f, -1.0f,    1.0f, 0.5f, 0.0f, 1.0f,     1.0f, 0.0f,
-         1.0f,  1.0f,  1.0f,    1.0f, 0.5f, 0.0f, 1.0f,     1.0f, 1.0f,
-         1.0f, -1.0f,  1.0f,    1.0f, 0.5f, 0.0f, 1.0f,     0.0f, 1.0f,
-
-        -1.0f, -1.0f, -1.0f,    0.0f, 0.5f, 1.0f, 1.0f,     0.0f, 0.0f,
-        -1.0f, -1.0f,  1.0f,    0.0f, 0.5f, 1.0f, 1.0f,     1.0f, 0.0f,
-         1.0f, -1.0f,  1.0f,    0.0f, 0.5f, 1.0f, 1.0f,     1.0f, 1.0f,
-         1.0f, -1.0f, -1.0f,    0.0f, 0.5f, 1.0f, 1.0f,     0.0f, 1.0f,
-
-        -1.0f,  1.0f, -1.0f,    1.0f, 0.0f, 0.5f, 1.0f,     0.0f, 0.0f,
-        -1.0f,  1.0f,  1.0f,    1.0f, 0.0f, 0.5f, 1.0f,     1.0f, 0.0f,
-         1.0f,  1.0f,  1.0f,    1.0f, 0.0f, 0.5f, 1.0f,     1.0f, 1.0f,
-         1.0f,  1.0f, -1.0f,    1.0f, 0.0f, 0.5f, 1.0f,     0.0f, 1.0f
-    };
-    gfx_buffer vbuf = gfx_make_buffer(&(gfx_buffer_desc){
-        .size = sizeof(vertices),
-        .content = vertices,
-    });
-
-    /* An index buffer for the cube */
-    uint16_t indices[] = {
-        0, 1, 2,  0, 2, 3,
-        6, 5, 4,  7, 6, 4,
-        8, 9, 10,  8, 10, 11,
-        14, 13, 12,  15, 14, 12,
-        16, 17, 18,  16, 18, 19,
-        22, 21, 20,  23, 22, 20
-    };
-    gfx_buffer ibuf = gfx_make_buffer(&(gfx_buffer_desc){
-        .type = GFX_BUFFERTYPE_INDEXBUFFER,
-        .size = sizeof(indices),
-        .content = indices,
     });
 
     /* Shader for the non-textured cube, rendered in the offscreen pass */
@@ -212,8 +157,6 @@ renderer renderer_create(renderer_params* params)
     r->color_img      = color_img;
     r->depth_img      = depth_img;
     r->offscreen_pass = offscreen_pass;
-    r->vbuf           = vbuf;
-    r->ibuf           = ibuf;
     r->offscreen_shd  = offscreen_shd;
     r->default_shd    = default_shd;
     r->offscreen_pip  = offscreen_pip;
@@ -223,6 +166,7 @@ renderer renderer_create(renderer_params* params)
 
 void renderer_frame(renderer r, renderer_inputs ri)
 {
+    renderer_scene* rs = &ri.scene;
     static float rx = 0.0f, ry = 0.0f;
 
     /* View-projection matrix */
@@ -244,20 +188,31 @@ void renderer_frame(renderer r, renderer_inputs ri)
 
     /* Pass action for offscreen pass, clearing to black */
     gfx_begin_pass(r->offscreen_pass, &(gfx_pass_action){
-        .colors[0] = { .action = GFX_ACTION_CLEAR, .val = { 0.0f, 0.0f, 0.0f, 1.0f } }
+        .colors[0] = {
+            .action = GFX_ACTION_CLEAR,
+            .val = { 0.0f, 0.0f, 0.0f, 1.0f }
+        }
     });
     gfx_apply_pipeline(r->offscreen_pip);
-    for (size_t i = 0; i < ri.scene.num_nodes; ++i) {
-        /* Resource bindings for offscreen rendering */
-        gfx_apply_bindings(&(gfx_bindings){
-            .vertex_buffers[0] = r->vbuf,
-            .index_buffer = r->ibuf
-        });
-        /* Uniforms for offscreen rendering */
-        params_t vs_params = {.mvp = mat4_mul_mat4(view_proj, model)};
-        gfx_apply_uniforms(GFX_SHADERSTAGE_VS, 0, &vs_params, sizeof(vs_params));
-        /* Draw */
-        gfx_draw(0, 36, 1);
+    for (size_t i = 0; i < rs->num_nodes; ++i) {
+        renderer_node* rn = &rs->nodes[i];
+        renderer_mesh* rm = &rs->meshes[rn->mesh];
+        mat4 modl = mat4_mul_mat4(rn->transform, model);
+        for (size_t j = 0; j < rm->num_primitives; ++j) {
+            /* Resource bindings for offscreen rendering */
+            renderer_primitive* rp = &rs->primitives[j];
+            gfx_buffer vbuf = rs->buffers[rp->vertex_buffer];
+            gfx_buffer ibuf = rs->buffers[rp->index_buffer];
+            gfx_apply_bindings(&(gfx_bindings){
+                .vertex_buffers[0] = vbuf,
+                .index_buffer      = ibuf
+            });
+            /* Uniforms for offscreen rendering */
+            params_t vs_params = {.mvp = mat4_mul_mat4(view_proj, modl)};
+            gfx_apply_uniforms(GFX_SHADERSTAGE_VS, 0, &vs_params, sizeof(vs_params));
+            /* Draw */
+            gfx_draw(rp->base_element, rp->num_elements, 1);
+        }
     }
     gfx_end_pass();
 
@@ -274,18 +229,25 @@ void renderer_frame(renderer r, renderer_inputs ri)
         }
     }, r->params.width, r->params.height);
     gfx_apply_pipeline(r->default_pip);
-    for (size_t i = 0; i < ri.scene.num_nodes; ++i) {
-        mat4 modl = mat4_mul_mat4(ri.scene.nodes[i].transform, model);
-        /* And the resource bindings for the default pass where a textured cube will
-         * rendered, note how the render-target image is used as texture here */
-        gfx_apply_bindings(&(gfx_bindings){
-            .vertex_buffers[0] = r->vbuf,
-            .index_buffer      = r->ibuf,
-            .fs_images[0]      = r->color_img
-        });
-        params_t vs_params = {.mvp = mat4_mul_mat4(view_proj, modl)};
-        gfx_apply_uniforms(GFX_SHADERSTAGE_VS, 0, &vs_params, sizeof(vs_params));
-        gfx_draw(0, 36, 1);
+    for (size_t i = 0; i < rs->num_nodes; ++i) {
+        renderer_node* rn = &rs->nodes[i];
+        renderer_mesh* rm = &rs->meshes[rn->mesh];
+        mat4 modl = mat4_mul_mat4(rn->transform, model);
+        for (size_t j = 0; j < rm->num_primitives; ++j) {
+            /* And the resource bindings for the default pass where a textured cube will
+             * rendered, note how the render-target image is used as texture here */
+            renderer_primitive* rp = &rs->primitives[j];
+            gfx_buffer vbuf = rs->buffers[rp->vertex_buffer];
+            gfx_buffer ibuf = rs->buffers[rp->index_buffer];
+            gfx_apply_bindings(&(gfx_bindings){
+                .vertex_buffers[0] = vbuf,
+                .index_buffer      = ibuf,
+                .fs_images[0]      = r->color_img
+            });
+            params_t vs_params = {.mvp = mat4_mul_mat4(view_proj, modl)};
+            gfx_apply_uniforms(GFX_SHADERSTAGE_VS, 0, &vs_params, sizeof(vs_params));
+            gfx_draw(rp->base_element, rp->num_elements, 1);
+        }
     }
     gfx_end_pass();
 
