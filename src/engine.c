@@ -14,20 +14,6 @@ struct engine {
     ecs_world_t* world;
 };
 
-engine engine_create(const engine_params* params)
-{
-    (void) params;
-    engine e = calloc(1, sizeof(*e));
-    e->world = ecs_init();
-    ecs_setup_internal(e->world);
-    return e;
-}
-
-ecs_world_t* engine_world(engine e)
-{
-    return e->world;
-}
-
 static void on_opengl_error(void* userdata, const char* msg)
 {
     engine e = userdata;
@@ -43,35 +29,10 @@ static void on_key(window wnd, int key, int scancode, int action, int mods)
         engine_stop(e);
 }
 
-void engine_update(engine e, float dt)
+engine engine_create(const engine_params* params)
 {
-    /* Poll events, and call event callbacks */
-    window_update(e->wnd);
-
-    /* Fire ecs systems */
-    ecs_progress(e->world, dt);
-}
-
-void engine_render(engine e, float dt)
-{
-    (void) dt;
-
-    /* Gather data needed by renderer from the ecs */
-    renderer_inputs ri = {};
-    ecs_prepare_renderer_inputs(e->world, &ri);
-
-    /* Render the frame */
-    renderer_frame(e->renderer, ri);
-
-    /* Free intermediate renderer input data */
-    ecs_free_render_inputs(e->world, &ri);
-
-    /* Show backbuffer */
-    window_swap_buffers(e->wnd);
-}
-
-void engine_run(engine e)
-{
+    (void) params;
+    engine e = calloc(1, sizeof(*e));
     const int width = 1280, height = 720;
 
     /* Create window */
@@ -107,6 +68,47 @@ void engine_run(engine e)
         .height = height
     });
 
+    /* Create world instance */
+    e->world = ecs_init();
+    ecs_setup_internal(e->world);
+
+    return e;
+}
+
+ecs_world_t* engine_world(engine e)
+{
+    return e->world;
+}
+
+void engine_update(engine e, float dt)
+{
+    /* Poll events, and call event callbacks */
+    window_update(e->wnd);
+
+    /* Fire ecs systems */
+    ecs_progress(e->world, dt);
+}
+
+void engine_render(engine e, float dt)
+{
+    (void) dt;
+
+    /* Gather data needed by renderer from the ecs */
+    renderer_inputs ri = {};
+    ecs_prepare_renderer_inputs(e->world, &ri);
+
+    /* Render the frame */
+    renderer_frame(e->renderer, ri);
+
+    /* Free intermediate renderer input data */
+    ecs_free_render_inputs(e->world, &ri);
+
+    /* Show backbuffer */
+    window_swap_buffers(e->wnd);
+}
+
+void engine_run(engine e)
+{
     /* Run main loop */
     e->ml_params = (mainloop_params){
         .update_callback = (mainloop_update_fn) engine_update,
@@ -115,12 +117,6 @@ void engine_run(engine e)
         .userdata = e
     };
     mainloop(&e->ml_params);
-
-    /* Destroy renderer instance */
-    renderer_destroy(e->renderer);
-
-    /* Close window */
-    window_destroy(e->wnd);
 }
 
 void engine_stop(engine e)
@@ -130,6 +126,15 @@ void engine_stop(engine e)
 
 void engine_destroy(engine e)
 {
+    /* Destroy world instance */
     ecs_fini(e->world);
+
+    /* Destroy renderer instance */
+    renderer_destroy(e->renderer);
+
+    /* Close window */
+    window_destroy(e->wnd);
+
+    /* Free engine instance */
     free(e);
 }
