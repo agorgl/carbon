@@ -35,7 +35,7 @@
 #include <linmath.h>
 #include <gfx.h>
 
-#define RENDERER_SCENE_INVALID_INDEX (-1)
+#define RENDERER_SCENE_INVALID_INDEX (~0lu)
 #define RENDERER_SCENE_MAX_BUFFERS (16)
 #define RENDERER_SCENE_MAX_IMAGES (16)
 #define RENDERER_SCENE_MAX_MATERIALS (16)
@@ -111,8 +111,8 @@ typedef struct renderer_primitive {
 
 /* A mesh is just a group of primitives (aka submeshes) */
 typedef struct renderer_mesh {
-    int first_primitive; /* Index into scene.primitives */
-    int num_primitives;
+    size_t first_primitive; /* Index into scene.primitives */
+    size_t num_primitives;
 } renderer_mesh;
 
 /* A node associates a transform with an mesh */
