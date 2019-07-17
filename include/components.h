@@ -33,6 +33,7 @@
 
 #include <flecs.h>
 #include "linmath.h"
+#include "resmngr.h"
 
 typedef struct transform {
     /* Individual components */
@@ -47,5 +48,10 @@ typedef struct transform {
     mat4 local_mat;
     mat4 world_mat;
 } transform;
+
+typedef struct model {
+    /* Associated resource handle */
+    rid resource;
+} model;
 
 #endif /* ! _COMPONENTS_H_ */

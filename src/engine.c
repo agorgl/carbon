@@ -104,7 +104,7 @@ void engine_render(engine e, float dt)
 
     /* Gather data needed by renderer from the ecs */
     renderer_inputs ri = {};
-    ecs_prepare_renderer_inputs(e->world, &ri);
+    ecs_prepare_renderer_inputs(e->world, &ri, e->rmgr);
 
     /* Render the frame */
     renderer_frame(e->renderer, ri);

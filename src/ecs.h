@@ -33,12 +33,13 @@
 
 #include <flecs.h>
 #include "renderer.h"
+#include "resmngr.h"
 
 /* Registers internal components and systems */
 void ecs_setup_internal(ecs_world_t* world);
 
 /* Runs internal system to prepare render object list */
-void ecs_prepare_renderer_inputs(ecs_world_t* world, renderer_inputs* ri);
+void ecs_prepare_renderer_inputs(ecs_world_t* world, renderer_inputs* ri, resmngr rm);
 
 /* Frees allocated resources used by render object list */
 void ecs_free_render_inputs(ecs_world_t* world, renderer_inputs* ri);
