@@ -7,7 +7,7 @@ void mainloop(const mainloop_params* params)
     const uint64_t ticks_per_update = time_ticks(msecs_per_update);
 
     float interpolation;
-    uint64_t previous, current, elapsed, lag = 0;
+    uint64_t previous, current, elapsed, lag = ticks_per_update;
 
     previous = time_now();
     while (!params->should_terminate) {
@@ -16,7 +16,7 @@ void mainloop(const mainloop_params* params)
         previous = current;
         lag += elapsed;
 
-        while (lag > ticks_per_update) {
+        while (lag >= ticks_per_update) {
             params->update_callback(params->userdata, 1.0f / params->updates_per_sec);
             lag -= ticks_per_update;
         }
