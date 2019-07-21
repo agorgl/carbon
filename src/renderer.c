@@ -8,10 +8,7 @@ typedef struct renderer {
     renderer_params params;
     gfx_image color_img;
     gfx_image depth_img;
-    gfx_pass offscreen_pass;
-    gfx_shader offscreen_shd;
     gfx_shader default_shd;
-    gfx_pipeline offscreen_pip;
     gfx_pipeline default_pip;
 }* renderer;
 
@@ -40,40 +37,7 @@ renderer renderer_create(renderer_params* params)
     img_desc.pixel_format = GFX_PIXELFORMAT_DEPTH;
     gfx_image depth_img = gfx_make_image(&img_desc);
 
-    /* Create offscreen pass onto the above render targets */
-    gfx_pass offscreen_pass = gfx_make_pass(&(gfx_pass_desc){
-        .color_attachments[0].image = color_img,
-        .depth_stencil_attachment.image = depth_img
-    });
-
-    /* Shader for the non-textured cube, rendered in the offscreen pass */
-    gfx_shader offscreen_shd = gfx_make_shader(&(gfx_shader_desc){
-        .vs.uniform_blocks[0] = {
-            .size = sizeof(params_t),
-            .uniforms = {
-                [0] = { .name="mvp", .type=GFX_UNIFORMTYPE_MAT4 }
-            }
-        },
-        .vs.source =
-            "#version 330\n"
-            "uniform mat4 mvp;\n"
-            "in vec4 position;\n"
-            "in vec4 color0;\n"
-            "out vec4 color;\n"
-            "void main() {\n"
-            "  gl_Position = mvp * position;\n"
-            "  color = color0;\n"
-            "}\n",
-        .fs.source =
-            "#version 330\n"
-            "in vec4 color;\n"
-            "out vec4 frag_color;\n"
-            "void main() {\n"
-            "  frag_color = color;\n"
-            "}\n"
-    });
-
-    /* ...and a second shader for rendering a textured cube in the default pass */
+    /* Shader for the default pass */
     gfx_shader default_shd = gfx_make_shader(&(gfx_shader_desc){
         .vs.uniform_blocks[0] = {
             .size = sizeof(params_t),
@@ -84,7 +48,6 @@ renderer renderer_create(renderer_params* params)
                 }
             }
         },
-        .fs.images[0] = { .name="tex", .type=GFX_IMAGETYPE_2D },
         .vs.source =
             "#version 330\n"
             "uniform mat4 mvp;\n"
@@ -109,31 +72,7 @@ renderer renderer_create(renderer_params* params)
             "}\n"
     });
 
-    /* Pipeline object for offscreen rendering, don't need texcoords here */
-    gfx_pipeline offscreen_pip = gfx_make_pipeline(&(gfx_pipeline_desc){
-        .layout = {
-            /* Need to provide stride, because the buffer's texcoord is skipped */
-            .buffers[0].stride = 36,
-            /* But don't need to provide attr offsets, because pos and color are continuous */
-            .attrs = {
-                [0] = { .format = GFX_VERTEXFORMAT_FLOAT3 },
-                [1] = { .format = GFX_VERTEXFORMAT_FLOAT4 }
-            }
-        },
-        .shader = offscreen_shd,
-        .index_type = GFX_INDEXTYPE_UINT16,
-        .depth_stencil = {
-            .depth_compare_func = GFX_COMPAREFUNC_LESS_EQUAL,
-            .depth_write_enabled = true
-        },
-        .blend.depth_format = GFX_PIXELFORMAT_DEPTH,
-        .rasterizer = {
-            .cull_mode = GFX_CULLMODE_BACK,
-            .sample_count = sample_count
-        }
-    });
-
-    /* And another pipeline object for the default pass */
+    /* Pipeline object for the default pass */
     gfx_pipeline default_pip = gfx_make_pipeline(&(gfx_pipeline_desc){
         .layout = {
             /* Don't need to provide buffer stride or attr offsets, no gaps here */
@@ -156,10 +95,7 @@ renderer renderer_create(renderer_params* params)
     r->params         = *params;
     r->color_img      = color_img;
     r->depth_img      = depth_img;
-    r->offscreen_pass = offscreen_pass;
-    r->offscreen_shd  = offscreen_shd;
     r->default_shd    = default_shd;
-    r->offscreen_pip  = offscreen_pip;
     r->default_pip    = default_pip;
     return r;
 }
@@ -176,49 +112,13 @@ void renderer_frame(renderer r, renderer_inputs ri)
 
     /* Prepare the uniform block with the model-view-projection matrix,
      * we just use the same matrix for the offscreen- and default-pass */
-    rx += 1.0f; ry += 2.0f;
+    ry += 1.0f;
     mat4 model = mat4_mul_mat4(
         mat4_rotation_x(radians(rx)),
         mat4_rotation_y(radians(ry)));
 
     /*
-     * Offscreen pass, this renders a rotating,
-     * untextured cube to the offscreen render target
-     */
-
-    /* Pass action for offscreen pass, clearing to black */
-    gfx_begin_pass(r->offscreen_pass, &(gfx_pass_action){
-        .colors[0] = {
-            .action = GFX_ACTION_CLEAR,
-            .val = { 0.0f, 0.0f, 0.0f, 1.0f }
-        }
-    });
-    gfx_apply_pipeline(r->offscreen_pip);
-    for (size_t i = 0; i < rs->num_nodes; ++i) {
-        renderer_node* rn = &rs->nodes[i];
-        renderer_mesh* rm = &rs->meshes[rn->mesh];
-        mat4 modl = mat4_mul_mat4(rn->transform, model);
-        for (size_t j = 0; j < rm->num_primitives; ++j) {
-            /* Resource bindings for offscreen rendering */
-            renderer_primitive* rp = &rs->primitives[j];
-            gfx_buffer vbuf = rs->buffers[rp->vertex_buffer];
-            gfx_buffer ibuf = rs->buffers[rp->index_buffer];
-            gfx_apply_bindings(&(gfx_bindings){
-                .vertex_buffers[0] = vbuf,
-                .index_buffer      = ibuf
-            });
-            /* Uniforms for offscreen rendering */
-            params_t vs_params = {.mvp = mat4_mul_mat4(view_proj, modl)};
-            gfx_apply_uniforms(GFX_SHADERSTAGE_VS, 0, &vs_params, sizeof(vs_params));
-            /* Draw */
-            gfx_draw(rp->base_element, rp->num_elements, 1);
-        }
-    }
-    gfx_end_pass();
-
-    /*
-     * Default pass, this renders a textured cube, using the
-     * offscreen render target as texture image
+     * Default pass
      */
 
     /* Pass action for default pass, clearing to blue-ish */
@@ -234,15 +134,13 @@ void renderer_frame(renderer r, renderer_inputs ri)
         renderer_mesh* rm = &rs->meshes[rn->mesh];
         mat4 modl = mat4_mul_mat4(rn->transform, model);
         for (size_t j = 0; j < rm->num_primitives; ++j) {
-            /* And the resource bindings for the default pass where a textured cube will
-             * rendered, note how the render-target image is used as texture here */
-            renderer_primitive* rp = &rs->primitives[j];
+            /* Resource bindings for the default pass */
+            renderer_primitive* rp = &rs->primitives[rm->first_primitive + j];
             gfx_buffer vbuf = rs->buffers[rp->vertex_buffer];
             gfx_buffer ibuf = rs->buffers[rp->index_buffer];
             gfx_apply_bindings(&(gfx_bindings){
                 .vertex_buffers[0] = vbuf,
                 .index_buffer      = ibuf,
-                .fs_images[0]      = r->color_img
             });
             params_t vs_params = {.mvp = mat4_mul_mat4(view_proj, modl)};
             gfx_apply_uniforms(GFX_SHADERSTAGE_VS, 0, &vs_params, sizeof(vs_params));
