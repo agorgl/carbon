@@ -63,7 +63,7 @@ int main(int argc, char* argv[])
     ecs_set(world, p, transform, {
         .pose = {
             .translation = (vec3){{0.0, 0.0, 0.0}},
-            .scale = (vec3){{1.0, 1.0, 1.0}},
+            .scale = (vec3){{1.5, 1.5, 1.5}},
             .rotation = quat_id()
         },
         .dirty = 1
@@ -76,8 +76,8 @@ int main(int argc, char* argv[])
     ECS_ENTITY(world, c1, transform, model);
     ecs_set(world, c1, transform, {
         .pose = {
-            .translation = (vec3){{-3.0, 0.0, 0.0}},
-            .scale = (vec3){{0.5, 0.5, 0.5}},
+            .translation = (vec3){{-2.5, 0.0, 0.0}},
+            .scale = (vec3){{0.8, 0.8, 0.8}},
             .rotation = quat_id()
         },
         .dirty = 1
@@ -91,8 +91,8 @@ int main(int argc, char* argv[])
     ECS_ENTITY(world, c2, transform, model);
     ecs_set(world, c2, transform, {
         .pose = {
-            .translation = (vec3){{3.0, 0.0, 0.0}},
-            .scale = (vec3){{0.3, 0.3, 0.3}},
+            .translation = (vec3){{2.5, 0.0, 0.0}},
+            .scale = (vec3){{0.6, 0.6, 0.6}},
             .rotation = quat_id()
         },
         .dirty = 1

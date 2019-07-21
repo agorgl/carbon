@@ -50,25 +50,24 @@ renderer renderer_create(renderer_params* params)
         },
         .vs.source =
             "#version 330\n"
+            "in vec3 position;\n"
+            "in vec3 normal;\n"
+            "in vec2 uv0;\n"
             "uniform mat4 mvp;\n"
-            "in vec4 position;\n"
-            "in vec4 color0;\n"
-            "in vec2 texcoord0;\n"
-            "out vec4 color;\n"
+            "out vec3 color;\n"
             "out vec2 uv;\n"
             "void main() {\n"
-            "  gl_Position = mvp * position;\n"
-            "  color = color0;\n"
-            "  uv = texcoord0;\n"
+            "  color = position;\n"
+            "  uv = uv0;\n"
+            "  gl_Position = mvp * vec4(position, 1.0);\n"
             "}\n",
         .fs.source =
             "#version 330\n"
-            "uniform sampler2D tex;\n"
-            "in vec4 color;\n"
+            "out vec4 fcolor;\n"
+            "in vec3 color;\n"
             "in vec2 uv;\n"
-            "out vec4 frag_color;\n"
             "void main() {\n"
-            "  frag_color = texture(tex, uv) + color * 0.5;\n"
+            "  fcolor = vec4(color, 1.0);\n"
             "}\n"
     });
 
@@ -77,18 +76,22 @@ renderer renderer_create(renderer_params* params)
         .layout = {
             /* Don't need to provide buffer stride or attr offsets, no gaps here */
             .attrs = {
-                [0] = { .format = GFX_VERTEXFORMAT_FLOAT3 },
-                [1] = { .format = GFX_VERTEXFORMAT_FLOAT4 },
-                [2] = { .format = GFX_VERTEXFORMAT_FLOAT2 }
+                [0] = { .format = GFX_VERTEXFORMAT_FLOAT3 }, /* position */
+                [1] = { .format = GFX_VERTEXFORMAT_FLOAT3 }, /* normal   */
+                [2] = { .format = GFX_VERTEXFORMAT_FLOAT2 }  /* texcoord */
             }
         },
         .shader = default_shd,
-        .index_type = GFX_INDEXTYPE_UINT16,
+        .index_type = GFX_INDEXTYPE_UINT32,
         .depth_stencil = {
             .depth_compare_func = GFX_COMPAREFUNC_LESS_EQUAL,
             .depth_write_enabled = true,
         },
-        .rasterizer.cull_mode = GFX_CULLMODE_BACK
+        .rasterizer = {
+            .cull_mode = GFX_CULLMODE_BACK,
+            .face_winding = SG_FACEWINDING_CCW,
+            .sample_count = sample_count
+        }
     });
 
     renderer r = calloc(1, sizeof(*r));
