@@ -108,7 +108,7 @@ static void merge_renderer_scenes(renderer_scene* tgt_scn, renderer_scene* src_s
 
             size_t num_index_ptrs = sizeof(index_ptrs) / sizeof(index_ptrs[0]);
             for (size_t k = 0; k < num_index_ptrs; ++k) {
-                size_t* idxp = index_ptrs[i];
+                size_t* idxp = index_ptrs[k];
                 if (*idxp != RENDERER_SCENE_INVALID_INDEX)
                     *idxp += offs_images;
             }
@@ -123,7 +123,7 @@ static void merge_renderer_scenes(renderer_scene* tgt_scn, renderer_scene* src_s
 
             size_t num_index_ptrs = sizeof(index_ptrs) / sizeof(index_ptrs[0]);
             for (size_t k = 0; k < num_index_ptrs; ++k) {
-                size_t* idxp = index_ptrs[i];
+                size_t* idxp = index_ptrs[k];
                 if (*idxp != RENDERER_SCENE_INVALID_INDEX)
                     *idxp += offs_images;
             }
