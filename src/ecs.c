@@ -79,16 +79,19 @@ static void merge_renderer_scenes(renderer_scene* tgt_scn, renderer_scene* src_s
     size_t offs_meshes     = tgt_scn->num_meshes;
     size_t offs_nodes      = tgt_scn->num_nodes;
 
+    assert(offs_buffers + src_scn->num_buffers < RENDERER_SCENE_MAX_BUFFERS);
     for (size_t i = 0; i < src_scn->num_buffers; ++i) {
         tgt_scn->buffers[offs_buffers + i] = src_scn->buffers[i];
         ++tgt_scn->num_buffers;
     }
 
+    assert(offs_images + src_scn->num_images < RENDERER_SCENE_MAX_IMAGES);
     for (size_t i = 0; i < src_scn->num_images; ++i) {
         tgt_scn->images[offs_images + i] = src_scn->images[i];
         ++tgt_scn->num_images;
     }
 
+    assert(offs_materials + src_scn->num_materials < RENDERER_SCENE_MAX_MATERIALS);
     for (size_t i = 0; i < src_scn->num_materials; ++i) {
         renderer_material* rmat = &tgt_scn->materials[offs_materials + i];
         *rmat = src_scn->materials[i];
@@ -128,6 +131,7 @@ static void merge_renderer_scenes(renderer_scene* tgt_scn, renderer_scene* src_s
         ++tgt_scn->num_materials;
     }
 
+    assert(offs_primitives + src_scn->num_primitives < RENDERER_SCENE_MAX_PRIMITIVES);
     for (size_t i = 0; i < src_scn->num_primitives; ++i) {
         renderer_primitive* p = &tgt_scn->primitives[offs_primitives + i];
         *p = src_scn->primitives[i];
@@ -140,6 +144,7 @@ static void merge_renderer_scenes(renderer_scene* tgt_scn, renderer_scene* src_s
         ++tgt_scn->num_primitives;
     }
 
+    assert(offs_meshes + src_scn->num_meshes < RENDERER_SCENE_MAX_MESHES);
     for (size_t i = 0; i < src_scn->num_meshes; ++i) {
         renderer_mesh* m = &tgt_scn->meshes[offs_meshes + i];
         *m = src_scn->meshes[i];
@@ -148,6 +153,7 @@ static void merge_renderer_scenes(renderer_scene* tgt_scn, renderer_scene* src_s
         ++tgt_scn->num_meshes;
     }
 
+    assert(offs_nodes + src_scn->num_nodes < RENDERER_SCENE_MAX_NODES);
     for (size_t i = 0; i < src_scn->num_nodes; ++i) {
         renderer_node* n = &tgt_scn->nodes[offs_nodes + i];
         *n = src_scn->nodes[i];
