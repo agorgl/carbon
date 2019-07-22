@@ -48,6 +48,7 @@ void resmngr_destroy(resmngr rm);
 
 /* Model resources */
 rid resmngr_model_sample(resmngr rm);
+rid resmngr_model_from_gltf(resmngr rm, const char* fpath);
 void* resmngr_model_lookup(resmngr rm, rid r);
 void resmngr_model_delete(resmngr rm, rid r);
 
