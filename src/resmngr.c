@@ -4,6 +4,7 @@
 #include <assert.h>
 #include "renderer.h"
 #include "cgltf.h"
+#include "stb_image.h"
 
 typedef struct resmngr {
     struct slot_map scene_map;
@@ -166,6 +167,7 @@ static void gltf_parse_meshes(renderer_scene* rs, const cgltf_data* gltf)
             renderer_primitive* prim = &rs->primitives[rs->num_primitives++];
             prim->vertex_buffer = nvert_buf;
             prim->index_buffer  = nindc_buf;
+            prim->material      = gltf_prim->material - gltf->materials;
 
             /* Count number of vertices in current primitive */
             size_t nverts = 0;
@@ -329,6 +331,106 @@ static void gltf_parse_nodes(renderer_scene* rs, const cgltf_data* gltf)
     }
 }
 
+static size_t gltf_texture_index(const cgltf_data* gltf, cgltf_texture* texture)
+{
+    return texture
+        ? (size_t)(texture - gltf->textures)
+        : RENDERER_SCENE_INVALID_INDEX;
+}
+
+static void gltf_parse_materials(renderer_scene* rs, const cgltf_data* gltf)
+{
+    assert(gltf->materials_count < RENDERER_SCENE_MAX_MATERIALS);
+
+    for (size_t i = 0; i < gltf->materials_count; ++i) {
+        cgltf_material* gltf_mat = &gltf->materials[i];
+        renderer_material* rmat = &rs->materials[rs->num_materials++];
+        if (gltf_mat->has_pbr_metallic_roughness) {
+            cgltf_pbr_metallic_roughness* pbr_mr = &gltf_mat->pbr_metallic_roughness;
+            *rmat = (renderer_material) {
+                .type = RENDERER_MATERIAL_TYPE_METALLIC,
+                .data = {
+                    .metallic = {
+                        .params = {
+                            .base_color_factor = (*(vec4*)pbr_mr->base_color_factor),
+                            .emissive_factor   = (*(vec3*)gltf_mat->emissive_factor),
+                            .metallic_factor   = pbr_mr->metallic_factor,
+                            .roughness_factor  = pbr_mr->roughness_factor,
+                        },
+                        .images = {
+                            .base_color         = gltf_texture_index(gltf, pbr_mr->base_color_texture.texture),
+                            .metallic_roughness = gltf_texture_index(gltf, pbr_mr->metallic_roughness_texture.texture),
+                            .normal             = gltf_texture_index(gltf, gltf_mat->normal_texture.texture),
+                            .occlusion          = gltf_texture_index(gltf, gltf_mat->occlusion_texture.texture),
+                            .emissive           = gltf_texture_index(gltf, gltf_mat->emissive_texture.texture),
+                        }
+                    }
+                }
+            };
+        } else if (gltf_mat->has_pbr_specular_glossiness) {
+            assert(0 && "Unimplemented");
+        } else if (gltf_mat->unlit) {
+            assert(0 && "Unimplemented");
+        } else {
+            assert(0 && "Unimplemented");
+        }
+    }
+}
+
+static void path_join(char* path, const char* base, const char* uri)
+{
+    const char* s0 = strrchr(base, '/');
+    const char* s1 = strrchr(base, '\\');
+    const char* slash = s0 ? (s1 && s1 > s0 ? s1 : s0) : s1;
+
+    if (slash) {
+        size_t prefix = slash - base + 1;
+        strncpy(path, base, prefix);
+        strcpy(path + prefix, uri);
+    } else {
+        strcpy(path, base);
+    }
+}
+
+static int gltf_load_textures(renderer_scene* rs, const char* gltf_path, const cgltf_data* gltf)
+{
+    assert(gltf->textures_count < RENDERER_SCENE_MAX_IMAGES);
+    for (size_t i = 0; i < gltf->textures_count; ++i) {
+        /* Get texture location */
+        cgltf_texture* gltf_tex = &gltf->textures[i];
+        cgltf_image* gltf_img = gltf_tex->image;
+        assert(gltf_img->uri);
+
+        /* Construct path to image */
+        char* path = calloc(1, strlen(gltf_path) + strlen(gltf_img->uri) + 1);
+        path_join(path, gltf_path, gltf_img->uri);
+
+        /* Load texture data */
+        int width, height, channels;
+        void* pixels = stbi_load(path, &width, &height, &channels, 4);
+        free(path);
+        if (!pixels)
+            return 0;
+
+        /* Upload data to GPU */
+        rs->images[rs->num_images++] = gfx_make_image(&(gfx_image_desc){
+            .width        = width,
+            .height       = height,
+            .min_filter   = GFX_FILTER_LINEAR_MIPMAP_LINEAR,
+            .mag_filter   = GFX_FILTER_LINEAR,
+            .pixel_format = GFX_PIXELFORMAT_RGBA8,
+            .content.subimage[0][0] = {
+                .ptr = pixels,
+                .size = width * height * channels
+            }
+        });
+
+        /* Free texture data from host memory */
+        free(pixels);
+    }
+    return 1;
+}
+
 rid resmngr_model_from_gltf(resmngr rm, const char* fpath)
 {
     rid r = slot_map_insert(&rm->scene_map, 0);
@@ -349,6 +451,10 @@ rid resmngr_model_from_gltf(resmngr rm, const char* fpath)
 
     gltf_parse_meshes(rs, data);
     gltf_parse_nodes(rs, data);
+    gltf_parse_materials(rs, data);
+
+    if (!gltf_load_textures(rs, fpath, data))
+        return RID_INVALID;
 
     cgltf_free(data);
     return r;
