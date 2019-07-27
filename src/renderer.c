@@ -110,7 +110,7 @@ void renderer_frame(renderer r, renderer_inputs ri)
 
     /* View-projection matrix */
     mat4 proj = mat4_perspective(radians(60.0f), 0.01f, 1000.0f, (float)r->params.width/(float)r->params.height);
-    mat4 view = mat4_view_look_at(vec3_new(0.0f, 1.5f, 6.0f), vec3_new(0.0f, 0.0f, 0.0f), vec3_new(0.0f, 1.0f, 0.0f));
+    mat4 view = ri.view;
     mat4 view_proj = mat4_mul_mat4(proj, view);
 
     /* Prepare the uniform block with the model-view-projection matrix,

@@ -141,6 +141,7 @@ typedef struct renderer_scene {
 
 typedef struct renderer_inputs {
     renderer_scene scene;
+    mat4 view;
 } renderer_inputs;
 
 renderer renderer_create(renderer_params* params);
