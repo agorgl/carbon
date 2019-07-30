@@ -1,16 +1,24 @@
 #include "texture_font.h"
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 #include <assert.h>
 #include <float.h>
 #include <stdio.h>
 #include <math.h>
 
+#define FONT_STB
+#if defined(FONT_FREETYPE)
 #include <ft2build.h>
 #include FT_FREETYPE_H
 #include FT_STROKER_H
 #include FT_LCD_FILTER_H
 #include FT_ADVANCES_H
+#elif defined(FONT_STB)
+#include <stb_truetype.h>
+#else
+#error "Unsupported font backend"
+#endif
 
 #define HRES  64
 #define HRESf 64.f
@@ -19,6 +27,7 @@
 /*-----------------------------------------------------------------
  * Freetype error list
  *-----------------------------------------------------------------*/
+#ifdef FONT_FREETYPE
 #undef __FTERRORS_H__
 #define FT_ERRORDEF(e, v, s)  {e, s},
 #define FT_ERROR_START_LIST   {
@@ -28,6 +37,7 @@ const struct {
     const char*  message;
 } FT_Errors[] =
 #include FT_ERRORS_H
+#endif
 
 /*-----------------------------------------------------------------
  * Vector
@@ -815,6 +825,7 @@ float texture_glyph_get_kerning(const texture_glyph* self, const char* codepoint
 /*-----------------------------------------------------------------
  * Texture font
  *-----------------------------------------------------------------*/
+#ifdef FONT_FREETYPE
 static int texture_font_load_face(texture_font* self, float size, FT_Library* library, FT_Face* face)
 {
     FT_Error error;
@@ -879,11 +890,37 @@ cleanup_library:
 cleanup:
     return 0;
 }
+#endif
 
+#ifdef FONT_STB
+static int texture_font_load_face(texture_font* self, stbtt_fontinfo* stb_fi)
+{
+    assert(self->location == TEXTURE_FONT_MEMORY); /* Unimplemented */
+
+    int font_offset = stbtt_GetFontOffsetForIndex(self->memory.base, 0);
+    if (font_offset == -1)
+        return 0;
+
+    int success = stbtt_InitFont(stb_fi, self->memory.base, font_offset);
+    if (!success)
+        return 0;
+
+    return 1;
+}
+#endif
+
+#if defined(FONT_FREETYPE)
 void texture_font_generate_kerning(texture_font* self, FT_Face* face)
 {
     FT_UInt glyph_index, prev_index;
     FT_Vector kerning;
+#elif defined(FONT_STB)
+void texture_font_generate_kerning(texture_font* self, stbtt_fontinfo* stb_fi)
+{
+    int glyph_index, prev_index;
+    struct {long x, y;} kerning;
+    float scale = stbtt_ScaleForMappingEmToPixels(stb_fi, self->size);
+#endif
     texture_glyph *glyph, *prev_glyph;
     assert(self);
 
@@ -891,13 +928,23 @@ void texture_font_generate_kerning(texture_font* self, FT_Face* face)
     /* Starts at index 1 since 0 is for the special backgroudn glyph */
     for (size_t i = 1; i < self->glyphs->size; ++i) {
         glyph = *(texture_glyph**)vector_get(self->glyphs, i);
+#if defined(FONT_FREETYPE)
         glyph_index = FT_Get_Char_Index(*face, glyph->codepoint);
+#elif defined(FONT_STB)
+        glyph_index = stbtt_FindGlyphIndex(stb_fi, glyph->codepoint);
+#endif
         vector_clear(glyph->kerning);
 
         for (size_t j = 1; j < self->glyphs->size; ++j) {
             prev_glyph = *(texture_glyph**)vector_get(self->glyphs, j);
+#if defined(FONT_FREETYPE)
             prev_index = FT_Get_Char_Index(*face, prev_glyph->codepoint);
             FT_Get_Kerning(*face, prev_index, glyph_index, FT_KERNING_UNFITTED, &kerning);
+#elif defined(FONT_STB)
+            prev_index = stbtt_FindGlyphIndex(stb_fi, prev_glyph->codepoint);
+            kerning.x  = stbtt_GetGlyphKernAdvance(stb_fi, prev_index, glyph_index) * scale;
+            kerning.x *= (float)(HRESf * HRESf);
+#endif
             /* printf("%c(%d)-%c(%d): %ld\n",
              *       prev_glyph->codepoint, prev_glyph->codepoint,
              *       glyph_index, glyph_index, kerning.x); */
@@ -911,10 +958,6 @@ void texture_font_generate_kerning(texture_font* self, FT_Face* face)
 
 static int texture_font_init(texture_font* self)
 {
-    FT_Library library;
-    FT_Face face;
-    FT_Size_Metrics metrics;
-
     assert(self->atlas);
     assert(self->size > 0);
     assert((self->location == TEXTURE_FONT_FILE && self->filename) ||
@@ -938,9 +981,18 @@ static int texture_font_init(texture_font* self)
     self->lcd_weights[3] = 0x40;
     self->lcd_weights[4] = 0x10;
 
+#if defined(FONT_FREETYPE)
+    FT_Library library;
+    FT_Face face;
     if (!texture_font_load_face(self, self->size * 100.f, &library, &face))
         return -1;
+#elif defined(FONT_STB)
+    struct stbtt_fontinfo stb_fi;
+    if (!texture_font_load_face(self, &stb_fi))
+        return -1;
+#endif
 
+#if defined(FONT_FREETYPE)
     self->underline_position = face->underline_position / (float)(HRESf * HRESf) * self->size;
     self->underline_position = roundf(self->underline_position);
     if (self->underline_position > -2) {
@@ -952,14 +1004,29 @@ static int texture_font_init(texture_font* self)
     if (self->underline_thickness < 1) {
         self->underline_thickness = 1.0;
     }
+#endif
 
+#if defined(FONT_FREETYPE)
+    FT_Size_Metrics metrics;
     metrics = face->size->metrics;
-    self->ascender = (metrics.ascender >> 6) / 100.0;
+    self->ascender  = (metrics.ascender >> 6) / 100.0;
     self->descender = (metrics.descender >> 6) / 100.0;
-    self->height = (metrics.height >> 6) / 100.0;
-    self->linegap = self->height - self->ascender + self->descender;
+    self->height    = (metrics.height >> 6) / 100.0;
+    self->linegap   = self->height - self->ascender + self->descender;
+#elif defined(FONT_STB)
+    int ascender, descender, line_gap;
+    stbtt_GetFontVMetrics(&stb_fi, &ascender, &descender, &line_gap);
+    float scale = stbtt_ScaleForMappingEmToPixels(&stb_fi, self->size);
+    self->ascender  = scale * ascender;
+    self->descender = scale * descender;
+    self->linegap   = scale * line_gap;
+    self->height    = self->ascender - self->descender + self->linegap;
+#endif
+
+#if defined(FONT_FREETYPE)
     FT_Done_Face(face);
     FT_Done_FreeType(library);
+#endif
 
     /* NULL is a special glyph */
     texture_font_get_glyph(self, NULL);
@@ -1041,30 +1108,22 @@ texture_glyph* texture_font_find_glyph(texture_font* self, const char* codepoint
 
 int texture_font_load_glyph(texture_font* self, const char* codepoint)
 {
-    size_t i, x, y;
-
+    int rval = 0;
+#if defined (FONT_FREETYPE)
     FT_Library library;
-    FT_Error error;
     FT_Face face;
-    FT_Glyph ft_glyph;
-    FT_GlyphSlot slot;
-    FT_Bitmap ft_bitmap;
-
-    FT_UInt glyph_index;
-    FT_Int32 flags = 0;
-    texture_glyph* glyph;
-    int ft_glyph_top = 0;
-    int ft_glyph_left = 0;
-    ivec4 region;
-
     if (!texture_font_load_face(self, self->size, &library, &face))
         return 0;
+#elif defined (FONT_STB)
+    struct stbtt_fontinfo stb_fi;
+    if (!texture_font_load_face(self, &stb_fi))
+        return 0;
+#endif
 
     /* Check if codepoint has been already loaded */
     if (texture_font_find_glyph(self, codepoint)) {
-        FT_Done_Face(face);
-        FT_Done_FreeType(library);
-        return 1;
+        rval = 1;
+        goto cleanup;
     }
 
     /* Codepoint NULL is special: it is used for line drawing
@@ -1077,9 +1136,8 @@ int texture_font_load_glyph(texture_font* self, const char* codepoint)
                                                 -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1};
         if (region.x < 0) {
             fprintf(stderr, "Texture atlas is full (line %d)\n", __LINE__);
-            FT_Done_Face(face);
-            FT_Done_FreeType(library);
-            return 0;
+            rval = 0;
+            goto cleanup;
         }
         texture_atlas_set_region(self->atlas, region.x, region.y, 4, 4, data, 0);
         glyph->codepoint = -1;
@@ -1089,15 +1147,22 @@ int texture_font_load_glyph(texture_font* self, const char* codepoint)
         glyph->t1 = (region.y + 3) / (float)self->atlas->height;
         vector_push_back(self->glyphs, &glyph);
 
-        FT_Done_Face(face);
-        FT_Done_FreeType(library);
-        return 1;
+        rval = 1;
+        goto cleanup;
     }
 
-    flags = 0;
-    ft_glyph_top = 0;
-    ft_glyph_left = 0;
-    glyph_index = FT_Get_Char_Index(face, (FT_ULong)utf8_to_utf32(codepoint));
+    struct {
+        unsigned int rows;
+        unsigned int width;
+        int pitch, xoffs, yoffs;
+        unsigned char* buffer;
+    } src_bitmap;
+
+#if defined (FONT_FREETYPE)
+    int ft_glyph_top = 0;
+    int ft_glyph_left = 0;
+    FT_UInt glyph_index = FT_Get_Char_Index(face, (FT_ULong)utf8_to_utf32(codepoint));
+    FT_Int32 flags = 0;
 
     /* WARNING: We use texture-atlas depth to guess if user wants LCD subpixel rendering */
     if (self->rendermode != GLYPH_RENDER_NORMAL && self->rendermode != GLYPH_RENDER_SIGNED_DISTANCE_FIELD) {
@@ -1121,17 +1186,19 @@ int texture_font_load_glyph(texture_font* self, const char* codepoint)
         }
     }
 
+    FT_Error error;
     error = FT_Load_Glyph(face, glyph_index, flags);
     if (error) {
         fprintf(stderr, "FT_Error (line %d, code 0x%02x) : %s\n",
                 __LINE__, FT_Errors[error].code, FT_Errors[error].message);
-        FT_Done_Face(face);
-        FT_Done_FreeType(library);
-        return 0;
+        rval = 0;
+        goto cleanup;
     }
 
+    FT_Glyph ft_glyph;
+    FT_Bitmap ft_bitmap;
     if (self->rendermode == GLYPH_RENDER_NORMAL || self->rendermode == GLYPH_RENDER_SIGNED_DISTANCE_FIELD) {
-        slot = face->glyph;
+        FT_GlyphSlot slot = face->glyph;
         ft_bitmap = slot->bitmap;
         ft_glyph_top = slot->bitmap_top;
         ft_glyph_left = slot->bitmap_left;
@@ -1184,11 +1251,31 @@ int texture_font_load_glyph(texture_font* self, const char* codepoint)
         FT_Stroker_Done(stroker);
 
         if (error) {
-            FT_Done_Face(face);
-            FT_Done_FreeType(library);
-            return 0;
+            rval = 0;
+            goto cleanup;
         }
     }
+    src_bitmap.width  = ft_bitmap.width;
+    src_bitmap.rows   = ft_bitmap.rows;
+    src_bitmap.pitch  = ft_bitmap.pitch;
+    src_bitmap.buffer = ft_bitmap.buffer;
+    src_bitmap.xoffs  = ft_glyph_left;
+    src_bitmap.yoffs  = ft_glyph_top;
+
+#elif defined(FONT_STB)
+    assert(self->atlas->depth == 1);
+    int glyph_index = stbtt_FindGlyphIndex(&stb_fi, utf8_to_utf32(codepoint));
+    float scale = stbtt_ScaleForMappingEmToPixels(&stb_fi, self->size);
+    int width, height, xoffs, yoffs;
+    unsigned char* data = stbtt_GetGlyphBitmap(&stb_fi, scale, scale, glyph_index, &width, &height, &xoffs, &yoffs);
+
+    src_bitmap.width  = width;
+    src_bitmap.rows   = height;
+    src_bitmap.pitch  = width;
+    src_bitmap.buffer = data;
+    src_bitmap.xoffs  = xoffs;
+    src_bitmap.yoffs  = -yoffs;
+#endif
 
     struct {
         int left;
@@ -1209,32 +1296,31 @@ int texture_font_load_glyph(texture_font* self, const char* codepoint)
         padding.bottom += self->padding;
     }
 
-    size_t src_w = ft_bitmap.width / self->atlas->depth;
-    size_t src_h = ft_bitmap.rows;
+    size_t src_w = src_bitmap.width / self->atlas->depth;
+    size_t src_h = src_bitmap.rows;
     size_t tgt_w = src_w + padding.left + padding.right;
     size_t tgt_h = src_h + padding.top + padding.bottom;
 
-    region = texture_atlas_get_region(self->atlas, tgt_w, tgt_h);
+    ivec4 region = texture_atlas_get_region(self->atlas, tgt_w, tgt_h);
 
     if (region.x < 0) {
         fprintf(stderr, "Texture atlas is full (line %d)\n", __LINE__);
-        FT_Done_Face(face);
-        FT_Done_FreeType(library);
-        return 0;
+        rval = 0;
+        goto cleanup;
     }
 
-    x = region.x;
-    y = region.y;
+    size_t x = region.x;
+    size_t y = region.y;
 
     unsigned char* buffer = calloc(tgt_w * tgt_h * self->atlas->depth, sizeof(unsigned char));
     unsigned char* dst_ptr = buffer + (padding.top * tgt_w + padding.left) * self->atlas->depth;
-    unsigned char* src_ptr = ft_bitmap.buffer;
-    for (i = 0; i < src_h; i++) {
+    unsigned char* src_ptr = src_bitmap.buffer;
+    for (size_t i = 0; i < src_h; i++) {
         /* Difference between width and pitch:
          * https://www.freetype.org/freetype2/docs/reference/ft2-basic_types.html#FT_Bitmap */
-        memcpy(dst_ptr, src_ptr, ft_bitmap.width);
+        memcpy(dst_ptr, src_ptr, src_bitmap.width);
         dst_ptr += tgt_w * self->atlas->depth;
-        src_ptr += ft_bitmap.pitch;
+        src_ptr += src_bitmap.pitch;
     }
 
     if (self->rendermode == GLYPH_RENDER_SIGNED_DISTANCE_FIELD) {
@@ -1246,36 +1332,50 @@ int texture_font_load_glyph(texture_font* self, const char* codepoint)
     texture_atlas_set_region(self->atlas, x, y, tgt_w, tgt_h, buffer, tgt_w * self->atlas->depth);
     free(buffer);
 
-    glyph                    = texture_glyph_new();
+    texture_glyph* glyph     = texture_glyph_new();
     glyph->codepoint         = utf8_to_utf32(codepoint);
     glyph->width             = tgt_w;
     glyph->height            = tgt_h;
     glyph->rendermode        = self->rendermode;
     glyph->outline_thickness = self->outline_thickness;
-    glyph->offset_x          = ft_glyph_left;
-    glyph->offset_y          = ft_glyph_top;
+    glyph->offset_x          = src_bitmap.xoffs;
+    glyph->offset_y          = src_bitmap.yoffs;
     glyph->s0                = x / (float)self->atlas->width;
     glyph->t0                = y / (float)self->atlas->height;
     glyph->s1                = (x + glyph->width) / (float)self->atlas->width;
     glyph->t1                = (y + glyph->height) / (float)self->atlas->height;
 
     /* Discard hinting to get advance */
+#if defined(FONT_FREETYPE)
     FT_Load_Glyph(face, glyph_index, FT_LOAD_RENDER | FT_LOAD_NO_HINTING);
-    slot = face->glyph;
+    FT_GlyphSlot slot = face->glyph;
     glyph->advance_x = slot->advance.x / HRESf;
     glyph->advance_y = slot->advance.y / HRESf;
-
-    vector_push_back(self->glyphs, &glyph);
 
     if (self->rendermode != GLYPH_RENDER_NORMAL && self->rendermode != GLYPH_RENDER_SIGNED_DISTANCE_FIELD)
         FT_Done_Glyph(ft_glyph);
 
     texture_font_generate_kerning(self, &face);
+#elif defined(FONT_STB)
+    int advance, left_bearing;
+    stbtt_GetGlyphHMetrics(&stb_fi, glyph_index, &advance, &left_bearing);
+    advance *= scale; left_bearing *= scale;
+    glyph->advance_x = advance;
+    glyph->advance_y = 0.0f;
 
+    texture_font_generate_kerning(self, &stb_fi);
+#endif
+
+    /* Store glyph */
+    vector_push_back(self->glyphs, &glyph);
+    rval = 1;
+
+cleanup:
+#ifdef FONT_FREETYPE
     FT_Done_Face(face);
     FT_Done_FreeType(library);
-
-    return 1;
+#endif
+    return rval;
 }
 
 size_t texture_font_load_glyphs(texture_font* self, const char* codepoints)
