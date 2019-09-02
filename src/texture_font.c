@@ -1323,6 +1323,10 @@ int texture_font_load_glyph(texture_font* self, const char* codepoint)
         src_ptr += src_bitmap.pitch;
     }
 
+#if defined(FONT_STB)
+    free(src_bitmap.buffer);
+#endif
+
     if (self->rendermode == GLYPH_RENDER_SIGNED_DISTANCE_FIELD) {
         unsigned char* sdf = make_distance_mapb(buffer, tgt_w, tgt_h);
         free(buffer);
