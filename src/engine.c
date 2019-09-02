@@ -7,6 +7,10 @@
 #include "renderer.h"
 #include "camera.h"
 #include "ecs.h"
+#include "embedded.h"
+#include "text.h"
+
+#define FONT_INTERNAL "fonts/noto_mono.ttf"
 
 struct engine {
     mainloop_params ml_params;
@@ -15,6 +19,8 @@ struct engine {
     resmngr rmgr;
     ecs_world_t* world;
     camera cam;
+    text_renderer text_renderer;
+    rid font;
 };
 
 static void on_opengl_error(void* userdata, const char* msg)
@@ -92,6 +98,14 @@ engine engine_create(const engine_params* params)
     /* Create world instance */
     e->world = ecs_init();
     ecs_setup_internal(e->world);
+
+    /* Create text renderer instance */
+    e->text_renderer = text_renderer_create();
+
+    /* Load main font */
+    void* font_data; size_t font_sz;
+    embedded_file(&font_data, &font_sz, FONT_INTERNAL);
+    e->font = resmngr_font_from_ttf_data(e->rmgr, font_data, font_sz);
 
     return e;
 }
@@ -181,6 +195,9 @@ void engine_stop(engine e)
 
 void engine_destroy(engine e)
 {
+    /* Destroy text renderer instance */
+    text_renderer_destroy(e->text_renderer);
+
     /* Destroy resource manager instance */
     resmngr_destroy(e->rmgr);
 
