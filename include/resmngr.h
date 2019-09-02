@@ -52,4 +52,10 @@ rid resmngr_model_from_gltf(resmngr rm, const char* fpath);
 void* resmngr_model_lookup(resmngr rm, rid r);
 void resmngr_model_delete(resmngr rm, rid r);
 
+/* Font resources */
+rid resmngr_font_from_ttf_file(resmngr rm, const char* fpath);
+rid resmngr_font_from_ttf_data(resmngr rm, void* data, size_t sz);
+void* resmngr_font_lookup(resmngr rm, rid r);
+void resmngr_font_delete(resmngr rm, rid r);
+
 #endif /* ! _RESMNGR_H_ */

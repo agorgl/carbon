@@ -5,15 +5,32 @@
 #include "renderer.h"
 #include "cgltf.h"
 #include "stb_image.h"
+#include "text.h"
 
 typedef struct resmngr {
     struct slot_map scene_map;
+    struct slot_map font_map;
 }* resmngr;
+
+typedef struct load_params {
+    union {
+        const char* fpath;
+        struct {
+            void* data;
+            size_t size;
+        };
+    };
+    enum {
+        LOAD_FILE,
+        LOAD_MEMORY
+    } type;
+} load_params;
 
 resmngr resmngr_create()
 {
     resmngr rm = calloc(1, sizeof(*rm));
     slot_map_init(&rm->scene_map, sizeof(renderer_scene));
+    slot_map_init(&rm->font_map, sizeof(font));
     return rm;
 }
 
@@ -28,7 +45,12 @@ void resmngr_destroy(resmngr rm)
         rid r = slot_map_data_to_key(&rm->scene_map, i);
         resmngr_model_delete(rm, r);
     }
+    for (size_t i = 0; i < rm->font_map.size; ++i) {
+        rid r = slot_map_data_to_key(&rm->font_map, i);
+        resmngr_font_delete(rm, r);
+    }
     slot_map_destroy(&rm->scene_map);
+    slot_map_destroy(&rm->font_map);
     free(rm);
 }
 
@@ -480,5 +502,83 @@ void resmngr_model_delete(resmngr rm, rid r)
         gfx_destroy_image(img);
     }
 
+    slot_map_remove(sm, r);
+}
+
+static rid resmngr_font_from_ttf(resmngr rm, load_params lparams)
+{
+    rid r = slot_map_insert(&rm->font_map, 0);
+    font* fnt = slot_map_lookup(&rm->font_map, r);
+    memset(fnt, 0, sizeof(*fnt));
+
+    /* Load font */
+    const int atlas_sz = 512;
+    const int font_psz = 48;
+    fnt->atlas = texture_atlas_new(atlas_sz, atlas_sz, 1);
+    switch (lparams.type) {
+        case LOAD_FILE:
+            fnt->tfont = texture_font_new_from_file(fnt->atlas, font_psz, lparams.fpath);
+            break;
+        case LOAD_MEMORY:
+            fnt->tfont = texture_font_new_from_memory(fnt->atlas, font_psz, lparams.data, lparams.size);
+            break;
+        default:
+            assert(0);
+    }
+    fnt->tfont->rendermode = GLYPH_RENDER_SIGNED_DISTANCE_FIELD;
+
+    /* Preload glyphs */
+    const char* cache = " !\"#$%&'()*+,-./0123456789:;<=>?"
+                        "@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_"
+                        "`abcdefghijklmnopqrstuvwxyz{|}~";
+    texture_font_load_glyphs(fnt->tfont, cache);
+
+    /* Create atlas image in GPU */
+    fnt->atlas_img = gfx_make_image(&(gfx_image_desc){
+        .width        = atlas_sz,
+        .height       = atlas_sz,
+        .min_filter   = GFX_FILTER_LINEAR,
+        .mag_filter   = GFX_FILTER_LINEAR,
+        .wrap_u       = GFX_WRAP_CLAMP_TO_EDGE,
+        .wrap_v       = GFX_WRAP_CLAMP_TO_EDGE,
+        .pixel_format = GFX_PIXELFORMAT_L8,
+        .content.subimage[0][0] = {
+            .ptr  = fnt->atlas->data,
+            .size = atlas_sz * atlas_sz * 1
+        }
+    });
+
+    return r;
+}
+
+rid resmngr_font_from_ttf_file(resmngr rm, const char* fpath)
+{
+    return resmngr_font_from_ttf(rm, (load_params){
+        .type  = LOAD_FILE,
+        .fpath = fpath
+    });
+}
+
+rid resmngr_font_from_ttf_data(resmngr rm, void* data, size_t sz)
+{
+    return resmngr_font_from_ttf(rm, (load_params){
+        .type = LOAD_MEMORY,
+        .data = data,
+        .size = sz
+    });
+}
+
+void* resmngr_font_lookup(resmngr rm, rid r)
+{
+    return slot_map_lookup(&rm->font_map, r);
+}
+
+void resmngr_font_delete(resmngr rm, rid r)
+{
+    struct slot_map* sm = &rm->font_map;
+    font* fnt = slot_map_lookup(sm, r);
+    gfx_destroy_image(fnt->atlas_img);
+    texture_font_delete(fnt->tfont);
+    texture_atlas_delete(fnt->atlas);
     slot_map_remove(sm, r);
 }
