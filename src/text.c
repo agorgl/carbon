@@ -9,10 +9,10 @@
 #define GLSRC(src) "#version 330 core\n" #src
 
 static const char* TEXT_VSH = GLSRC(
-attribute vec2 vpos;
-attribute vec2 vtco;
+in vec2 vpos;
+in vec2 vtco;
 
-varying vec2 tco;
+out vec2 tco;
 uniform mat4 mvp;
 
 void main()
@@ -23,18 +23,8 @@ void main()
 );
 
 static const char* TEXT_FSH = GLSRC(
-#ifdef GL_OES_standard_derivatives
-#extension GL_OES_standard_derivatives : enable
-const bool HAS_DERIVATIVES = true;
-#else
-const bool HAS_DERIVATIVES = false;
-#endif
-
-#ifdef GL_ES
-precision mediump float;
-#endif
-
-varying vec2 tco;
+out vec4 fcolor;
+in vec2 tco;
 
 uniform vec4 col;
 uniform float scl;
@@ -56,7 +46,7 @@ void main()
 
     // Keep outlines a constant width irrespective of scaling
     float fw = 0.0;
-    if (dfd && HAS_DERIVATIVES) {
+    if (dfd) {
         // GLSL's fwidth = abs(dFdx(dist)) + abs(dFdy(dist))
         fw = fwidth(dist);
         // Stefan Gustavson's fwidth
@@ -71,16 +61,16 @@ void main()
         float dscale = 0.354; // half of 1/sqrt2
         vec2 duv = dscale * (dFdx(uv) + dFdy(uv));
         vec4 box = vec4(uv - duv, uv + duv);
-        float asum = contour(texture2D(tex, box.xy).r, fw)
-                   + contour(texture2D(tex, box.zw).r, fw)
-                   + contour(texture2D(tex, box.xw).r, fw)
-                   + contour(texture2D(tex, box.zy).r, fw);
+        float asum = contour(texture(tex, box.xy).r, fw)
+                   + contour(texture(tex, box.zw).r, fw)
+                   + contour(texture(tex, box.xw).r, fw)
+                   + contour(texture(tex, box.zy).r, fw);
         // Weighted average, with 4 extra points having 0.5 weight each,
         // so 1 + 0.5 * 4 = 3 is the divisor
         alpha = (alpha + 0.5 * asum) / 3.0;
     }
 
-    gl_FragColor = col * vec4(vec3(1.0), alpha);
+    fcolor = col * vec4(vec3(1.0), alpha);
 });
 
 typedef struct tvertex {
