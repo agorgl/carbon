@@ -81,10 +81,14 @@ engine engine_create(const engine_params* params)
         .userdata = e
     });
 
+    /* Get default framebuffer size */
+    int fbwidth, fbheight;
+    window_get_framebuffer_size(e->wnd, &fbwidth, &fbheight);
+
     /* Create renderer instance */
     e->renderer = renderer_create(&(renderer_params){
-        .width  = width,
-        .height = height
+        .width  = fbwidth,
+        .height = fbheight
     });
 
     /* Create resource manager instance */
