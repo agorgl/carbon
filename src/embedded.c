@@ -3,10 +3,25 @@
 
 #ifdef __APPLE__
 #include <mach-o/getsect.h>
+#include <mach-o/ldsyms.h>
+#include <dlfcn.h>
+extern int _res_stub;
+static size_t osxsectionsize(const char* sectname)
+{
+    size_t sz; _res_stub = 0;
+    getsectiondata(&_mh_execute_header, SEG_DATA, sectname, &sz);
+    return sz;
+}
+static void* osxsectiondata(const char* sectname)
+{
+    size_t sz; _res_stub = 0;
+    void* data = getsectiondata(&_mh_execute_header, SEG_DATA, sectname, &sz);
+    return data;
+}
 #define EXTLD(NAME) \
   extern const unsigned char _section$__DATA__ ## NAME [];
-#define LDVAR(NAME) _section$__DATA__ ## NAME
-#define LDLEN(NAME) (getsectbyname("__DATA", "__" #NAME)->size)
+#define LDVAR(NAME) (osxsectiondata("__" #NAME))
+#define LDLEN(NAME) (osxsectionsize("__" #NAME))
 #elif (defined __WIN32__) /* MinGW */
 #define EXTLD(NAME) \
   extern const unsigned char binary_ ## NAME ## _start[]; \
