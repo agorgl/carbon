@@ -139,9 +139,7 @@ void start_threads(
 
         if (i != 0) {
             thread->thread = ecs_os_thread_new(ecs_worker, thread);
-            if (!thread->thread) {
-                ecs_abort(ECS_THREAD_ERROR, NULL);
-            }
+            ecs_assert(thread->thread != 0, ECS_THREAD_ERROR, NULL);
         }
     }
 }
@@ -175,19 +173,26 @@ void ecs_schedule_jobs(
     EcsColSystem *system_data = ecs_get_ptr(world, system, EcsColSystem);
     uint32_t thread_count = ecs_vector_count(world->worker_threads);
     uint32_t total_rows = 0;
+    bool is_task = false;
 
-    void *ptr = ecs_vector_first(system_data->tables);
+    ecs_matched_table_t *tables = ecs_vector_first(system_data->tables);
     uint32_t i, count = ecs_vector_count(system_data->tables);
-    size_t size = system_data->table_params.element_size;
 
-    for (i = 0; i < count; i ++, ptr = ECS_OFFSET(ptr, size)) {
-        uint32_t table_index = *(uint32_t*)ptr;
-        ecs_table_t *table = ecs_vector_get(
-            world->main_stage.tables, &table_arr_params, table_index);
-        total_rows += ecs_vector_count(table->columns[0].data);
+    for (i = 0; i < count; i ++) {
+        ecs_table_t *table = tables[i].table;
+        if (table) {
+            total_rows += ecs_vector_count(table->columns[0].data);
+        } else {
+            is_task = true;
+        }
+
+        /* Task systems should only have one matched table which is empty */
+        ecs_assert(!is_task || !i, ECS_INTERNAL_ERROR, NULL);
     }
 
-    if (total_rows < thread_count) {
+    if (is_task) {
+        thread_count = 1; /* Tasks are always scheduled to the main thread */
+    } else if (total_rows < thread_count) {
         thread_count = total_rows;
     }
 

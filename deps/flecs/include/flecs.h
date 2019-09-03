@@ -39,6 +39,7 @@ typedef struct ecs_time_t {
 /* Utility headers */
 #include <flecs/util/os_api.h>
 #include <flecs/util/vector.h>
+#include <flecs/util/chunked.h>
 #include <flecs/util/map.h>
 #include <flecs/util/stats.h>
 #include <flecs/util/os_api.h>
@@ -56,7 +57,7 @@ extern "C" {
 /* -- Supporting types -- */
 
 /** A hash of the component identifiers in a type. */
-typedef uint32_t ecs_type_t;
+typedef const ecs_vector_t* ecs_type_t;
 
 /** Id component type */
 typedef const char *EcsId;
@@ -114,6 +115,7 @@ typedef struct ecs_rows_t {
 
     void *param;                 /* Userdata passed to on-demand system */
     float delta_time;            /* Time elapsed since last frame */
+    float world_time;            /* Time elapsed since start of simulation */
     uint32_t frame_offset;       /* Offset relative to frame */
     uint32_t offset;             /* Offset relative to current table */
     uint32_t count;              /* Number of rows to process by system */
@@ -140,7 +142,7 @@ typedef void (*ecs_module_init_action_t)(
 #define EEcsColSystem (7)
 #define EEcsId (8)
 #define EEcsHidden (9)
-#define EEcsContainer (10)
+#define EEcsDisabled (10)
 
 /* Type handles to builtin components */
 FLECS_EXPORT
@@ -154,13 +156,18 @@ extern ecs_type_t
     TEcsColSystem,
     TEcsId,
     TEcsHidden,
-    TEcsContainer;
+    TEcsDisabled;
+
+
+#define ECS_INSTANCEOF ((ecs_entity_t)1 << 63)
+#define ECS_CHILDOF ((ecs_entity_t)1 << 62)
+#define ECS_ENTITY_FLAGS_MASK ((ecs_entity_t)(ECS_INSTANCEOF | ECS_CHILDOF))
+#define ECS_ENTITY_MASK ((ecs_entity_t)~ECS_ENTITY_FLAGS_MASK)
+#define ECS_SINGLETON ((ecs_entity_t)(ECS_ENTITY_FLAGS_MASK - 1))
+#define ECS_INVALID_ENTITY (0)
 
 /* This allows passing 0 as type to functions that accept types */
 #define T0 (0)
-
-/* This id can be used to indicate an entity handle is not set */
-#define ECS_INVALID_ENTITY ((ecs_entity_t)-1)
 
 /* Ids (names) of builtin components */
 FLECS_EXPORT
@@ -173,7 +180,8 @@ extern const char
     *ECS_COL_SYSTEM_ID,
     *ECS_ID_ID,
     *ECS_HIDDEN_ID,
-    *ECS_CONTAINER_ID;
+    *ECS_CONTAINER_ID,
+    *ECS_DISABLED_ID;
 
 /* -- World API -- */
 
@@ -421,6 +429,11 @@ void ecs_set_threads(
     ecs_world_t *world,
     uint32_t threads);
 
+/** Get number of configured threads */
+FLECS_EXPORT
+uint32_t ecs_get_threads(
+    ecs_world_t *world);
+
 /** Get index of current worker thread */
 FLECS_EXPORT
 uint16_t ecs_get_thread_index(
@@ -451,6 +464,11 @@ FLECS_EXPORT
 void ecs_set_target_fps(
     ecs_world_t *world,
     float fps);
+
+/** Get number of configured threads */
+FLECS_EXPORT
+uint32_t ecs_get_target_fps(
+    ecs_world_t *world);
 
 /** Enables admin web server
  * This operation allows an profile and enable/disable registered systems
@@ -645,6 +663,133 @@ ecs_entity_t _ecs_new_w_count(
 #define ecs_new_w_count(world, type, count)\
     _ecs_new_w_count(world, T##type, count)
 
+typedef void* ecs_table_columns_t;
+
+typedef struct ecs_table_data_t {
+    uint32_t row_count;
+    uint32_t column_count;
+    ecs_entity_t *entities;
+    ecs_entity_t *components;
+    ecs_table_columns_t *columns;
+} ecs_table_data_t;
+
+/** Insert data in bulk.
+ * This operation allows applications to insert data in bulk by providing the
+ * entity and component data as arrays. The data is passed in using the
+ * ecs_table_data_t type, which has to be populated with the data that has to be
+ * inserted.
+ * 
+ * The application must at least provide the row_count, column_count and 
+ * components fields. The latter is an array of component identifiers that
+ * identifies the components to be added to the entitiy.
+ *
+ * The entities array must be populated with the entity identifiers to set. If
+ * this field is left NULL, Flecs will create row_count new entities.
+ *
+ * The component data must be provided in the columns field. This is an array of
+ * component arrays. The component arrays must be provided in the same order as
+ * the components have been provided in the components array. For example, if
+ * the components array is set to {ecs_entity(Position), ecs_entity(Velocity)},
+ * the columns must first specify the Position, and then the Velocity array. If
+ * no component data is provided, the components will be left uninitialized.
+ *
+ * Both the entities array and the component data arrays in columns must contain
+ * exactly row_count elements. The columns array must contain exactly 
+ * column_count elements.
+ *
+ * The operation allows for efficient insertion of data for the same set of
+ * entities, provided that the entities are specified in the same order for
+ * every invocation of this function. After executing this operation, entities
+ * will be ordered in the same order specified in the entities array.
+ *
+ * If entities already exist in another table, they will be deleted from that
+ * table and inserted into the new table. 
+ */
+FLECS_EXPORT
+ecs_entity_t ecs_set_w_data(
+    ecs_world_t *world,
+    ecs_table_data_t *data);
+
+/** Create a new child entity.
+ * Child entities are equivalent to normal entities, but can additionally be 
+ * created with a container entity. Container entities allow for the creation of
+ * entity hierarchies.
+ * 
+ * This function is equivalent to calling ecs_new with a type that combines both
+ * the type specified in this function and the type id for the container.
+ *
+ * @param world The world.
+ * @param parent The container to which to add the child entity.
+ * @param type The type with which to create the child entity.
+ * @returns A handle to the created entity.
+ * @see ecs_new_entity ecs_new_component ecs_new_system ecs_new_prefab ecs_new_type ecs_new ecs_new_w_count
+ */
+FLECS_EXPORT
+ecs_entity_t _ecs_new_child(
+    ecs_world_t *world,
+    ecs_entity_t parent,
+    ecs_type_t type);
+
+/* Macro to ensure you don't accidentally pass a non-type into the function */
+#define ecs_new_child(world, parent, type)\
+    _ecs_new_child(world, parent, T##type)
+
+/* Create new child entities in batch.
+ * This operation is similar to ecs_new_w_count, with as only difference that
+ * the parent is added to the type of the new entities.
+ *
+ * @param world The world.
+ * @param parent The parent.
+ * @param type The type to create the new entities with.
+ * @param count The number of entities to create.
+ */
+FLECS_EXPORT
+ecs_entity_t _ecs_new_child_w_count(
+    ecs_world_t *world,
+    ecs_entity_t parent,
+    ecs_type_t type,
+    uint32_t count);
+
+/* Macro to ensure you don't accidentally pass a non-type into the function */
+#define ecs_new_child_w_count(world, parent, type, count)\
+    _ecs_new_child_w_count(world, parent, T##type, count)
+
+/** Instantiate entity from a base entity.
+ * This operation returns a new entity that shares components with the provided 
+ * base entity.
+ * 
+ * @param world The world.
+ * @param base The base entity.
+ * @return A new entity that is an instance of base.
+ */
+FLECS_EXPORT
+ecs_entity_t _ecs_new_instance(
+    ecs_world_t *world,
+    ecs_entity_t base,
+    ecs_type_t type);
+
+/* Macro to ensure you don't accidentally pass a non-type into the function */
+#define ecs_new_instance(world, base, type)\
+    _ecs_new_instance(world, base, T##type)
+
+/** Instantiate entities from a base entity in batch.
+ * This operation returns a specified number of new entities that share 
+ * components with the provided base entity.
+ * 
+ * @param world The world.
+ * @param base The base entity.
+ * @return The id to the first new entity.
+ */
+FLECS_EXPORT
+ecs_entity_t _ecs_new_instance_w_count(
+    ecs_world_t *world,
+    ecs_entity_t base,
+    ecs_type_t type,
+    uint32_t count);
+
+#define ecs_new_instance_w_count(world, base, type, count)\
+    _ecs_new_instance_w_count(world, base, T##type, count)
+
 /** Create new entity with same components as specified entity.
  * This operation creates a new entity which has the same components as the
  * specified entity. This includes prefabs and entity-components (entities to
@@ -684,6 +829,31 @@ FLECS_EXPORT
 void ecs_delete(
     ecs_world_t *world,
     ecs_entity_t entity);
+
+/** Delete all entities containing a (set of) component(s). 
+ * This operation provides a more efficient alternative to deleting entities one
+ * by one by deleting an entire table or set of tables in a single operation.
+ * The operation will clear all tables that have all of the components in the
+ * provided to_delete type, while skipping tables that have any of the 
+ * components in the provided except type.
+ * 
+ * For example, if to_delete is [Position, Velocity] and except is 
+ * [Mass, Rotation], [Position, Velocity] will be deleted, but 
+ * [Position, Velocity, Mass] and [Position, Velocity, Rotation] will not be
+ * deleted.
+ * 
+ * @param world The world.
+ * @param to_delete Tables with this set of components will be cleared.
+ * @param except Tables with any of these components will not be cleared.
+ */
+FLECS_EXPORT
+void _ecs_delete_w_type(
+    ecs_world_t *world,
+    ecs_type_t to_delete,
+    ecs_type_t except);
+
+#define ecs_delete_w_type(world, to_delete, except)\
+    _ecs_delete_w_type(world, T##to_delete, T##except)
 
 /** Add a type to an entity.
  * This operation will add one or more components (as per the specified type) to
@@ -735,7 +905,8 @@ void _ecs_remove(
  * This operation is a combination of ecs_add and ecs_remove. The operation
  * behaves as if the specified to_remove type is removed first, and 
  * subsequently the to_add type is added. This operation is more efficient than
- * adding/removing components separately with ecs_add/ecs_remove.
+ * adding/removing components separately with ecs_add/ecs_remove, as the entity
+ * is moved between tables at most once.
  * 
  * @param world The world.
  * @param entity The entity from which to remove, and to which to add the types.
@@ -753,143 +924,6 @@ void _ecs_add_remove(
 #define ecs_add_remove(world, entity, to_add, to_remove)\
     _ecs_add_remove(world, entity, T##to_add, T##to_remove)
 
-/** Get pointer to component data.
- * This operation obtains a pointer to the component data of an entity. If the
- * component was not added for the specified entity, the operation will return
- * NULL.
- *
- * Note that the returned pointer has temporary validity. Operations such as
- * delete and commit may invalidate the pointer as data is potentially moved
- * to different locations. After one of these operations is invoked, the pointer
- * will have to be re-obtained.
- *
- * This function is wrapped by the ecs_get convenience macro, which can be
- * used like this:
- *
- * Foo value = ecs_get(world, e, Foo);
- *
- * @param world The world.
- * @param entity Handle to the entity from which to obtain the component data.
- * @param component The component to retrieve the data for.
- * @returns A pointer to the data, or NULL of the component was not found.
- */
-FLECS_EXPORT
-void* _ecs_get_ptr(
-    ecs_world_t *world,
-    ecs_entity_t entity,
-    ecs_type_t type);
-
-/* Macro to ensure you don't accidentally pass a non-type into the function */
-#define ecs_get_ptr(world, entity, type)\
-    _ecs_get_ptr(world, entity, T##type)
-
-/* Convenienve macro for returning a value instead of a pointer */
-#define ecs_get(world, entity, type)\
-  (*(type*)_ecs_get_ptr(world, entity, T##type))
-
-#define ecs_get_singleton(world, type)\
-    (*(type*)_ecs_get_ptr(world, 0, T##type))
-
-#define ecs_get_singleton_ptr(world, type)\
-    _ecs_get_ptr(world, 0, T##type)
-
-/* Set value of component.
- * This function sets the value of a component on the specified entity. If the
- * component does not yet exist, it will be added to the entity.
- *
- * This function can be used like this:
- * Foo value = {.x = 10, .y = 20};
- * ecs_set_ptr(world, e, tFoo, &value);
- *
- * This function is wrapped by the ecs_set convenience macro, which can be used
- * like this:
- *
- * ecs_set(world, e, Foo, {.x = 10, .y = 20});
- *
- * @param world The world.
- * @param entity The entity on which to set the component.
- * @param component The component to set.
- */
-FLECS_EXPORT
-ecs_entity_t _ecs_set_ptr(
-    ecs_world_t *world,
-    ecs_entity_t entity,
-    ecs_type_t type,
-    size_t size,
-    void *ptr);
-
-FLECS_EXPORT
-ecs_entity_t _ecs_set_singleton_ptr(
-    ecs_world_t *world,
-    ecs_type_t type,
-    size_t size,
-    void *ptr);
-
-#define ecs_set_ptr(world, entity, type, ptr)\
-    _ecs_set_ptr(world, entity, T##type, sizeof(type), ptr)
-
-/* Conditionally skip macro's as compound literals are not supported in C89 */
-#ifndef __BAKE_LEGACY__
-#define ecs_set(world, entity, type, ...)\
-    _ecs_set_ptr(world, entity, T##type, sizeof(type), &(type)__VA_ARGS__)
-
-#define ecs_set_singleton(world, type, ...)\
-    _ecs_set_singleton_ptr(world, T##type, sizeof(type), &(type)__VA_ARGS__)
-#endif
-
-#define ecs_set_singleton_ptr(world, type, ptr)\
-    _ecs_set_singleton_ptr(world, T##type, sizeof(type), ptr)
-
-
-/* Container API */
-
-/** Create a new child entity.
- * Child entities are equivalent to normal entities, but can additionally be 
- * created with a container entity. Container entities allow for the creation of
- * entity hierarchies.
- * 
- * This function is equivalent to calling ecs_new with a type that combines both
- * the type specified in this function and the type id for the container.
- * 
- * If the provided parent entity does not have the 'EcsContainer' component, it
- * will be added automatically.
- *
- * @param world The world.
- * @param parent The container to which to add the child entity.
- * @param type The type with which to create the child entity.
- * @returns A handle to the created entity.
- * @see ecs_new_entity ecs_new_component ecs_new_system ecs_new_prefab ecs_new_type ecs_new ecs_new_w_count
- */
-FLECS_EXPORT
-ecs_entity_t _ecs_new_child(
-    ecs_world_t *world,
-    ecs_entity_t parent,
-    ecs_type_t type);
-
-/* Macro to ensure you don't accidentally pass a non-type into the function */
-#define ecs_new_child(world, parent, type)\
-    _ecs_new_child(world, parent, T##type)
-
-/* Create new child entities in batch.
- * This operation is similar to ecs_new_w_count, with as only difference that
- * the parent is added to the type of the new entities.
- *
- * @param world The world.
- * @param parent The parent.
- * @param type The type to create the new entities with.
- * @param count The number of entities to create.
- */
-FLECS_EXPORT
-ecs_entity_t _ecs_new_child_w_count(
-    ecs_world_t *world,
-    ecs_entity_t parent,
-    ecs_type_t type,
-    uint32_t count);
-
-/* Macro to ensure you don't accidentally pass a non-type into the function */
-#define ecs_new_child_w_count(world, parent, type, count)\
-    _ecs_new_child_w_count(world, parent, T##type, count)
-
 /** Adopt a child entity by a parent.
  * This operation adds the specified parent entity to the type of the specified
  * entity, which effectively establishes a parent-child relationship. The parent
@@ -897,8 +931,7 @@ ecs_entity_t _ecs_new_child_w_count(
  * of the entity type.
  *
  * If the parent was already added to the entity, this operation will have no
- * effect. If this is the first time a child is added to the parent entity, the
- * EcsContainer component will be added to the parent.
+ * effect.
  *
  * This operation is similar to an ecs_add, with as difference that instead of a 
  * type it accepts any entity handle.
@@ -928,11 +961,126 @@ void ecs_adopt(
 FLECS_EXPORT
 void ecs_orphan(
     ecs_world_t *world,
-    ecs_entity_t child,
+    ecs_entity_t entity,
     ecs_entity_t parent);
 
+/** Inherit from a base.
+ * This operation adds a base to an entity, which will cause the entity to
+ * inherit the components of the base. If the entity already inherited from the
+ * specified base, this operation does nothing.
+ * 
+ * @param world The world.
+ * @param entity The entity to add the base to.
+ * @param base The base to add to the entity.
+ */
+FLECS_EXPORT
+void ecs_inherit(
+    ecs_world_t *world,
+    ecs_entity_t entity,
+    ecs_entity_t base);
 
-/* Utility API */
+/** Disinherit from a base.
+ * This operation removes a base from an entity, which will cause the entity to
+ * no longer inherit the components of the base. If the entity did not inherit
+ * from the specified base, this operation does nothing.
+ * 
+ * @param world The world.
+ * @param entity The entity to remove the base from.
+ * @param base The base to remove from the entity.
+ */
+FLECS_EXPORT
+void ecs_disinherit(
+    ecs_world_t *world,
+    ecs_entity_t entity,
+    ecs_entity_t base);
+
+/** Get pointer to component data.
+ * This operation obtains a pointer to the component data of an entity. If the
+ * component was not added for the specified entity, the operation will return
+ * NULL.
+ *
+ * Note that the returned pointer has temporary validity. Operations such as
+ * delete and add/remove may invalidate the pointer as data is potentially moved
+ * to different locations. After one of these operations is invoked, the pointer
+ * will have to be re-obtained.
+ *
+ * This function is wrapped by the ecs_get convenience macro, which can be
+ * used like this:
+ *
+ * Foo value = ecs_get(world, e, Foo);
+ *
+ * @param world The world.
+ * @param entity Handle to the entity from which to obtain the component data.
+ * @param component The component to retrieve the data for.
+ * @returns A pointer to the data, or NULL of the component was not found.
+ */
+FLECS_EXPORT
+void* _ecs_get_ptr(
+    ecs_world_t *world,
+    ecs_entity_t entity,
+    ecs_type_t type);
+
+/* Macro to ensure you don't accidentally pass a non-type into the function */
+#define ecs_get_ptr(world, entity, type)\
+    _ecs_get_ptr(world, entity, T##type)
+
+/* Convenienve macro for returning a value instead of a pointer */
+#define ecs_get(world, entity, type)\
+  (*(type*)_ecs_get_ptr(world, entity, T##type))
+
+#define ecs_get_singleton(world, type)\
+    (*(type*)_ecs_get_ptr(world, ECS_SINGLETON, T##type))
+
+#define ecs_get_singleton_ptr(world, type)\
+    _ecs_get_ptr(world, ECS_SINGLETON, T##type)
+
+/* Set value of component.
+ * This function sets the value of a component on the specified entity. If the
+ * component does not yet exist, it will be added to the entity.
+ *
+ * This function can be used like this:
+ * Foo value = {.x = 10, .y = 20};
+ * ecs_set_ptr(world, e, ecs_type(Foo), &value);
+ *
+ * This function is wrapped by the ecs_set convenience macro, which can be used
+ * like this:
+ *
+ * ecs_set(world, e, Foo, {.x = 10, .y = 20});
+ *
+ * @param world The world.
+ * @param entity The entity on which to set the component.
+ * @param component The component to set.
+ */
+FLECS_EXPORT
+ecs_entity_t _ecs_set_ptr(
+    ecs_world_t *world,
+    ecs_entity_t entity,
+    ecs_entity_t component,
+    size_t size,
+    void *ptr);
+
+FLECS_EXPORT
+ecs_entity_t _ecs_set_singleton_ptr(
+    ecs_world_t *world,
+    ecs_entity_t component,
+    size_t size,
+    void *ptr);
+
+#define ecs_set_ptr(world, entity, component, ptr)\
+    _ecs_set_ptr(world, entity, ecs_entity(component), sizeof(component), ptr)
+
+/* Conditionally skip macro's as compound literals are not supported in C89 */
+#ifndef __BAKE_LEGACY__
+#define ecs_set(world, entity, component, ...)\
+    _ecs_set_ptr(world, entity, ecs_entity(component), sizeof(component), &(component)__VA_ARGS__)
+
+#define ecs_set_singleton(world, component, ...)\
+    _ecs_set_singleton_ptr(world, ecs_entity(component), sizeof(component), &(component)__VA_ARGS__)
+#endif
+
+#define ecs_set_singleton_ptr(world, component, ptr)\
+    _ecs_set_singleton_ptr(world, ecs_entity(component), sizeof(component), ptr)
+
 
 /** Check if entity has the specified type.
  * This operation checks if the entity has the components associated with the
@@ -958,6 +1106,17 @@ bool _ecs_has(
 #define ecs_has(world, entity, type)\
     _ecs_has(world, entity, T##type)
 
+/** Same as ecs_has, but only returns true if entity owns the component(s). */
+FLECS_EXPORT
+bool _ecs_has_owned(
+    ecs_world_t *world,
+    ecs_entity_t entity,
+    ecs_type_t type);
+
+/* Macro to ensure you don't accidentally pass a non-type into the function */
+#define ecs_has_owned(world, entity, type)\
+    _ecs_has_owned(world, entity, T##type)
+
 /** Check if entity has any of the components in the specified type.
  * This operation checks if the entity has any of the components associated with
  * the specified type. It accepts component handles, families and prefabs.
@@ -979,6 +1138,23 @@ bool _ecs_has_any(
 
 #define ecs_has_any(world, entity, type)\
     _ecs_has_any(world, entity, T##type)
+
+/** Same as ecs_has_any, but only returns true if entity owns the component(s). */
+FLECS_EXPORT
+bool _ecs_has_any_owned(
+    ecs_world_t *world,
+    ecs_entity_t entity,
+    ecs_type_t type);
+
+/* Macro to ensure you don't accidentally pass a non-type into the function */
+#define ecs_has_any_owned(world, entity, type)\
+    _ecs_has_any_owned(world, entity, T##type)
+
+FLECS_EXPORT
+bool ecs_has_entity(
+    ecs_world_t *world,
+    ecs_entity_t entity,
+    ecs_entity_t component);
 
 /** Check if parent entity contains child entity.
  * This function tests if the specified parent entity has been added to the
@@ -1009,10 +1185,13 @@ bool ecs_contains(
  * @param component The component which the resovled container should have.
  */
 FLECS_EXPORT
-ecs_entity_t ecs_get_parent(
+ecs_entity_t _ecs_get_parent(
     ecs_world_t *world,
     ecs_entity_t entity,
     ecs_entity_t component);
+
+#define ecs_get_parent(world, entity, component)\
+    _ecs_get_parent(world, entity, ecs_entity(component))
 
 /** Get type of entity.
  * This operation returns the entity type, which is a handle to the a list of
@@ -1119,6 +1298,7 @@ ecs_entity_t ecs_lookup_child(
     ecs_entity_t parent,
     const char *id);
 
+
 /* -- Type API -- */
 
 /** Get a type from an entity.
@@ -1132,7 +1312,7 @@ ecs_entity_t ecs_lookup_child(
  * functions like ecs_add and ecs_remove.
  * 
  * You can only obtain types from entities that have EcsComponent, EcsPrefab,
- * EcsTypeComponent or EcsContainer. These components are automatically added
+ * or EcsTypeComponent. These components are automatically added
  * by the ecs_new_* functions, but can also be added manually.
  * 
  * The ECS_COMPONENT, ECS_TAG, ECS_TYPE or ECS_PREFAB macro's will auto-
@@ -1158,11 +1338,27 @@ ecs_type_t ecs_type_from_entity(
  * @returns The entity associated with the type.
  */
 FLECS_EXPORT
-ecs_entity_t ecs_entity_from_type(
+ecs_entity_t ecs_type_to_entity(
     ecs_world_t *world,
     ecs_type_t type);
 
-/** Merge two types. 
+/** Find or create type from existing type and entity. 
+ * This operation adds the specified entity to the specified type, and returns a
+ * new or existing type that is a union of the specified type and entity. The
+ * provided type will not be altered.
+ * 
+ * @param world The world.
+ * @param type The type to which to add the entity.
+ * @param entity The entity to add to the type.
+ * @returns A type that is the union of the specified type and entity.
+ */
+FLECS_EXPORT
+ecs_type_t ecs_type_add(
+    ecs_world_t *world,
+    ecs_type_t type,
+    ecs_entity_t entity);
+
+/** Find or create type that is the union of two types. 
  * This operation will return a type that contains exactly the components in the
  * specified type, plus the components in type_add, and not the components in
  * type_remove.
@@ -1177,14 +1373,27 @@ ecs_entity_t ecs_entity_from_type(
  * @param type_remove The type to remove from the original type.
  */
 FLECS_EXPORT
-ecs_type_t _ecs_merge_type(
+ecs_type_t ecs_type_merge(
     ecs_world_t *world,
     ecs_type_t type,
     ecs_type_t type_add,
     ecs_type_t type_remove);
 
-#define ecs_merge_type(world, type, type_add, type_remove)\
-    _ecs_merge_type(world, T##type, T##type_add, T##type_remove)
+/** Find or create type from entity array.
+ * This operation will return a type that contains the entities in the specified
+ * array. If a type with the specified entities already exists, it will be
+ * returned, otherwise a new type will be created.
+ * 
+ * @param world The world.
+ * @param array A C array with entity identifiers.
+ * @param count The number of elements in the array.
+ * @returns A type that contains the specified number of entities.
+ */
+FLECS_EXPORT
+ecs_type_t ecs_type_find(
+    ecs_world_t *world,
+    ecs_entity_t *array,
+    uint32_t count);
 
 /** Get component from type at index. 
  * This operation returns the components (or entities) that are contained in the
@@ -1196,18 +1405,80 @@ ecs_type_t _ecs_merge_type(
  * @returns zero if out of bounds, a component if within bounds.
  */
 FLECS_EXPORT
-ecs_entity_t ecs_type_get_component(
+ecs_entity_t ecs_type_get_entity(
     ecs_world_t *world,
     ecs_type_t type,
     uint32_t index);
 
-/** Convert type to string */
+/** Check if type has entity.
+ * This operation returns whether a type has a specified entity.
+ * 
+ * @param world The world.
+ * @param type The type to check.
+ * @param entity The entity to check for.
+ * @returns true if the type contains the entity, otherwise false.
+ */
 FLECS_EXPORT
-char* _ecs_type_str(
+bool ecs_type_has_entity(
+    ecs_world_t *world,
+    ecs_type_t type,
+    ecs_entity_t entity);
+
+/** Get type from type expression.
+ * This function obtains a type from a type expression. A type expression is a
+ * comma-deliminated list of the type's entity identifiers. For example, a type
+ * with entities Position and Velocity is: "Position, Velocity".
+ * 
+ * Type expressions may include type flags that indicate the role of the entity
+ * within the type. The following type flags are supported:
+ * - INSTANCEOF: share components from this entity
+ * - CHILDOF:    treat entity as parent
+ * 
+ * Type flags can be added with the OR (|) operator. More than one type flag may
+ * be specified. This is an example of a type expression with type flags:
+ * 
+ * Position, Velocity, INSTANCEOF | my_prefab, CHILDOF | my_parent
+ * 
+ * Entities created with this type will have the Position and Velocity 
+ * components, will share components from my_prefab, and will be children of
+ * my_parent. The following is also a valid type expression:
+ * 
+ * INSTANCEOF | CHILDOF | my_prefab
+ * 
+ * Entities of this type will both share components from my_prefab, as well as
+ * be treated as children of my_prefab.
+ * 
+ * The order in which components are specified has no effect. The following type
+ * expressions are equivalent:
+ * 
+ * - Position, Velocity
+ * - Velocity, Position
+ * 
+ * @param world The world.
+ * @param expr The type expression.
+ * @returns A type if the expression is valid, otherwise NULL.
+ */
+FLECS_EXPORT
+ecs_type_t ecs_expr_to_type(
+    ecs_world_t *world,
+    const char *expr);
+
+/** Get type expression from type. 
+ * This function converts a type to a type expression, which is a string
+ * representation of the type as it is provided to the ecs_new_entity and
+ * ecs_new_type functions. For more information on type expressions, see 
+ * ecs_expr_to_type.
+ * 
+ * @param world The world.
+ * @param type The type for which to obtain the expression.
+ * @returns The type expression string. This string needs to be deallocated in
+ *          order to prevent memory leaks.
+ */ 
+FLECS_EXPORT
+char* ecs_type_to_expr(
     ecs_world_t *world,
     ecs_type_t type);
 
-#define ecs_type_str(world, type) _ecs_type_str(world, ecs_type(type))
 
 /* -- System API -- */
 
@@ -1274,39 +1545,29 @@ bool ecs_is_enabled(
     ecs_entity_t system);
 
 /** Run a specific system manually.
- * This operation runs a single system on demand. It is an efficient way to
- * invoke logic on a set of entities, as on demand systems are only matched to
+ * This operation runs a single system manually. It is an efficient way to
+ * invoke logic on a set of entities, as manual systems are only matched to
  * tables at creation time or after creation time, when a new table is created.
  *
- * On demand systems are useful to evaluate lists of prematched entities at
+ * Manual systems are useful to evaluate lists of prematched entities at
  * application defined times. Because none of the matching logic is evaluated
- * before the system is invoked, on demand systems are much more efficient than
+ * before the system is invoked, manual systems are much more efficient than
  * manually obtaining a list of entities and retrieving their components.
- *
- * An application may however want to apply a filter to an on demand system for
- * fast-changing unpredictable selections of entity subsets. The filter
- * parameter lets applications pass handles to components or component families,
- * and only entities that have said components will be evaluated.
- *
- * Because the filter is evaluated not on a per-entity basis, but on a per table
- * basis, filter evaluation is still very cheap, especially when compared to
- * tables with large numbers of entities.
  *
  * An application may pass custom data to a system through the param parameter.
  * This data can be accessed by the system through the param member in the
  * ecs_rows_t value that is passed to the system callback.
  *
  * Any system may interrupt execution by setting the interrupted_by member in
- * the ecs_rows_t value. This is particularly useful for on demand systems, where
+ * the ecs_rows_t value. This is particularly useful for manual systems, where
  * the value of interrupted_by is returned by this operation. This, in
- * cominbation with the param argument lets applications use on demand systems
+ * cominbation with the param argument lets applications use manual systems
  * to lookup entities: once the entity has been found its handle is passed to
  * interrupted_by, which is then subsequently returned.
  *
  * @param world The world.
  * @param system The system to run.
  * @param delta_time: The time passed since the last system invocation.
- * @param filter A component or type to filter matched entities.
  * @param param A user-defined parameter to pass to the system.
  * @returns handle to last evaluated entity if system was interrupted.
  */
@@ -1317,7 +1578,27 @@ ecs_entity_t ecs_run(
     float delta_time,
     void *param);
 
-/** Run system with offset/limit and type filter */
+/** Run system with offset/limit and type filter.
+ * This operation is the same as ecs_run, but filters the entities that will be
+ * iterated by the system.
+ * 
+ * Entities can be filtered in two ways. Offset and limit control the range of
+ * entities that is iterated over. The range is applied to all entities matched
+ * with the system, thus may cover multiple archetypes.
+ * 
+ * The type filter controls which entity types the system will evaluate. Only
+ * types that contain all components in the type filter will be iterated over. A
+ * type filter is only evaluated once per table, which makes filtering cheap if
+ * the number of entities is large and the number of tables is small, but not as
+ * cheap as filtering in the system signature.
+ * 
+ * @param world The world.
+ * @param system The system to invoke.
+ * @param delta_time: The time passed since the last system invocation.
+ * @param filter A component or type to filter matched entities.
+ * @param param A user-defined parameter to pass to the system.
+ * @returns handle to last evaluated entity if system was interrupted.
+ */
 FLECS_EXPORT
 ecs_entity_t _ecs_run_w_filter(
     ecs_world_t *world,
@@ -1331,31 +1612,90 @@ ecs_entity_t _ecs_run_w_filter(
 #define ecs_run_w_filter(world, system, delta_time, offset, limit, type, param)\
     _ecs_run_w_filter(world, system, delta_time, offset, limit, T##type, param)
 
-/* Obtain a column from inside a system */
+/** Set system context.
+ * This operation allows an application to register custom data with a system.
+ * This data can be accessed using the ecs_get_system_context operation, or
+ * through the 'param' field in the ecs_rows_t parameter passed into the system
+ * callback.
+ *
+ * @param world The world.
+ * @param system The system on which to set the context.
+ * @param ctx A pointer to a user defined structure.
+ */
+FLECS_EXPORT
+void ecs_set_system_context(
+    ecs_world_t *world,
+    ecs_entity_t system,
+    const void *ctx);
+
+/** Get system context.
+ * Get custom data from a system previously set with ecs_set_system_context.
+ *
+ * @param world The world.
+ * @param system The system of which to obtain the context.
+ * @returns The system context.
+ */
+FLECS_EXPORT
+void* ecs_get_system_context(
+    ecs_world_t *world,
+    ecs_entity_t system);
+
+/** Obtain a pointer to column data. 
+ * This function is to be used inside a system to obtain data from a column in
+ * the system signature. The provided index corresponds with the index of the
+ * element in the system signature, starting from one. For example, for the
+ * following system signature:
+ * 
+ * Position, Velocity
+ * 
+ * Position is at index 1, and Velocity is at index 2.
+ * 
+ * This function is typically invoked through the `ECS_COLUMN` macro which
+ * automates declaring a variable of the correct type in the scope of the system
+ * function.
+ * 
+ * When a valid pointer is obtained, it can be used as an array with rows->count
+ * elements if the column is owned by the entity being iterated over, or as a
+ * pointer if the column is shared (see ecs_is_shared).
+ * 
+ * @param rows The rows parameter passed into the system.
+ * @param index The index identifying the column in a system signature.
+ * @returns A pointer to the column data if index is valid, otherwise NULL.
+ */
 FLECS_EXPORT
 void* _ecs_column(
     ecs_rows_t *rows,
-    uint32_t index,
-    bool test);
+    size_t size,
+    uint32_t column);
 
-#define ecs_column(rows, type, index)\
-    ((type*)_ecs_column(rows, index, false))
+#define ecs_column(rows, type, column)\
+    ((type*)_ecs_column(rows, sizeof(type), column))
 
-#define ecs_column_test(rows, type, index)\
-    ((type*)_ecs_column(rows, index, true))
-
-/* Obtain a reference to a shared component */
+/** Test if column is shared or not. 
+ * The following signature shows an example of owned components and shared
+ * components:
+ * 
+ * Position, CONTAINER.Velocity, MyEntity.Mass
+ * 
+ * Position is an owned component, while Velocity and Mass are shared 
+ * components. While these kinds of relationships are expressed explicity in a
+ * system signature, inheritance relationships are implicit. The above signature
+ * matches both entities for which Position is owned as well as entities for
+ * which Position appears in an entity that they inherit from.
+ * 
+ * If a system needs to support both cases, it needs to test whether the
+ * component is shared or not. This test only needs to happen once per system
+ * callback invocation, as all the entities being iterated over will either own
+ * or not own the component.
+ * 
+ * @param rows The rows parameter passed into the system.
+ * @param index The index identifying the column in a system signature.
+ * @returns true if the column is shared, false if it is owned.
+ */
 FLECS_EXPORT
-void* _ecs_shared(
+bool ecs_is_shared(
     ecs_rows_t *rows,
-    uint32_t index,
-    bool test);
-
-#define ecs_shared(rows, type, index)\
-    ((type*)_ecs_shared(rows, index, false))
-
-#define ecs_shared_test(rows, type, index)\
-    ((type*)_ecs_shared(rows, index, true))
+    uint32_t column);
 
 /** Obtain a single field. 
  * This is an alternative method to ecs_column to access data in a system, which
@@ -1374,16 +1714,13 @@ void* _ecs_shared(
  */
 FLECS_EXPORT
 void *_ecs_field(
-    ecs_rows_t *rows, 
-    uint32_t index, 
+    ecs_rows_t *rows,
+    size_t size,
     uint32_t column,
-    bool test);
+    uint32_t row);
 
-#define ecs_field(rows, type, index, column)\
-    ((type*)_ecs_field(rows, index, column, false))
-
-#define ecs_field_test(rows, type, index, column)\
-    ((type*)_ecs_field(rows, index, column, true))
+#define ecs_field(rows, type, column, row)\
+    ((type*)_ecs_field(rows, sizeof(type), column, row))
 
 /** Obtain the source of a column from inside a system.
  * This operation lets you obtain the entity from which the column data was
@@ -1404,16 +1741,9 @@ void *_ecs_field(
  * @return The source entity for the column. 
  */
 FLECS_EXPORT
-ecs_entity_t _ecs_column_source(
+ecs_entity_t ecs_column_source(
     ecs_rows_t *rows,
-    uint32_t column,
-    bool test);
-
-#define ecs_column_source(rows, column)\
-        _ecs_column_source(rows, column, false)
-
-#define ecs_column_source_test(rows, column)\
-        _ecs_column_source(rows, column, true)
+    uint32_t column);
 
 /** Obtain the component for a column inside a system.
  * This operation obtains the component handle for a column in the system. This
@@ -1434,16 +1764,9 @@ ecs_entity_t _ecs_column_source(
  * @return The component for the specified column, or 0 if failed.
  */
 FLECS_EXPORT
-ecs_entity_t _ecs_column_entity(
+ecs_entity_t ecs_column_entity(
     ecs_rows_t *rows,
-    uint32_t column,
-    bool test);
-
-#define ecs_column_entity(rows, column)\
-        _ecs_column_entity(rows, column, false)
-
-#define ecs_column_entity_test(rows, column)\
-        _ecs_column_entity(rows, column, true)
+    uint32_t column);
 
 /** Obtain the type of a column from inside a system. 
  * This operation is equivalent to ecs_column_entity, except that it returns
@@ -1467,17 +1790,20 @@ ecs_entity_t _ecs_column_entity(
  * @return The type for the specified column, or 0 if failed.
  */ 
 FLECS_EXPORT
-ecs_type_t _ecs_column_type(
+ecs_type_t ecs_column_type(
     ecs_rows_t *rows,
-    uint32_t column,
-    bool test);
+    uint32_t column);
 
-#define ecs_column_type(rows, column)\
-        _ecs_column_type(rows, column, false)
+/** Get type of table that system is currently iterating over. */
+FLECS_EXPORT
+ecs_type_t ecs_table_type(
+    ecs_rows_t *rows);
 
-#define ecs_column_type_test(rows, column)\
-        _ecs_column_type(rows, column, true)
-
+/** Get type of table that system is currently iterating over. */
+FLECS_EXPORT
+void* ecs_table_column(
+    ecs_rows_t *rows,
+    uint32_t column);
 
 /* -- Functions used in convenience macro's -- */
 
@@ -1662,36 +1988,47 @@ void _ecs_assert(
     uint32_t line);
 
 #define ecs_abort(error_code, param) _ecs_abort(error_code, param, __FILE__, __LINE__); abort()
+
+#ifdef NDEBUG
+#define ecs_assert(condition, error_code, param)
+#else
 #define ecs_assert(condition, error_code, param) _ecs_assert(condition, error_code, param, #condition, __FILE__, __LINE__); assert(condition)
+#endif
 
 #define ECS_INVALID_HANDLE (1)
-#define ECS_INVALID_PARAMETERS (2)
+#define ECS_INVALID_PARAMETER (2)
 #define ECS_INVALID_COMPONENT_ID (3)
-#define ECS_INVALID_COMPONENT_EXPRESSION (4)
-#define ECS_UNKNOWN_COMPONENT_ID (5)
-#define ECS_UNKNOWN_TYPE_ID (6)
-#define ECS_TYPE_NOT_AN_ENTITY (7)
-#define ECS_MISSING_SYSTEM_CONTEXT (8)
-#define ECS_NOT_A_COMPONENT (9)
-#define ECS_INTERNAL_ERROR (10)
-#define ECS_MORE_THAN_ONE_PREFAB (11)
-#define ECS_ENTITY_ALREADY_DEFINED (12)
-#define ECS_INVALID_COMPONENT_SIZE (13)
-#define ECS_OUT_OF_MEMORY (14)
-#define ECS_MODULE_UNDEFINED (15)
-#define ECS_COLUMN_INDEX_OUT_OF_RANGE (16)
-#define ECS_COLUMN_IS_NOT_SHARED (17)
-#define ECS_COLUMN_IS_SHARED (18)
-#define ECS_INVALID_WHILE_MERGING (19)
-#define ECS_INVALID_WHILE_ITERATING (20)
-#define ECS_INVALID_FROM_WORKER (21)
-#define ECS_UNRESOLVED_IDENTIFIER (22)
-#define ECS_OUT_OF_RANGE (23)
-#define ECS_COLUMN_IS_NOT_SET (24)
-#define ECS_UNRESOLVED_REFERENCE (25)
-#define ECS_THREAD_ERROR (26)
-#define ECS_MISSING_OS_API (27)
-
+#define ECS_INVALID_EXPRESSION (4)
+#define ECS_INVALID_TYPE_EXPRESSION (5)
+#define ECS_INVALID_SIGNATURE (6)
+#define ECS_UNKNOWN_COMPONENT_ID (7)
+#define ECS_UNKNOWN_TYPE_ID (8)
+#define ECS_TYPE_NOT_AN_ENTITY (9)
+#define ECS_MISSING_SYSTEM_CONTEXT (10)
+#define ECS_NOT_A_COMPONENT (11)
+#define ECS_INTERNAL_ERROR (12)
+#define ECS_MORE_THAN_ONE_PREFAB (13)
+#define ECS_ALREADY_DEFINED (14)
+#define ECS_INVALID_COMPONENT_SIZE (15)
+#define ECS_OUT_OF_MEMORY (16)
+#define ECS_MODULE_UNDEFINED (17)
+#define ECS_COLUMN_INDEX_OUT_OF_RANGE (18)
+#define ECS_COLUMN_IS_NOT_SHARED (19)
+#define ECS_COLUMN_IS_SHARED (20)
+#define ECS_COLUMN_HAS_NO_DATA (21)
+#define ECS_COLUMN_TYPE_MISMATCH (22)
+#define ECS_INVALID_WHILE_MERGING (23)
+#define ECS_INVALID_WHILE_ITERATING (24)
+#define ECS_INVALID_FROM_WORKER (25)
+#define ECS_UNRESOLVED_IDENTIFIER (26)
+#define ECS_OUT_OF_RANGE (27)
+#define ECS_COLUMN_IS_NOT_SET (28)
+#define ECS_UNRESOLVED_REFERENCE (29)
+#define ECS_THREAD_ERROR (30)
+#define ECS_MISSING_OS_API (31)
+#define ECS_TYPE_TOO_LARGE (32)
+#define ECS_INVALID_PREFAB_CHILD_TYPE (33)
+#define ECS_UNSUPPORTED (34)
 
 /* -- Convenience macro's for wrapping around generated types and entities -- */
 
@@ -1728,11 +2065,13 @@ void _ecs_assert(
  * This macro provides a convenient way to register components with a world. It
  * can be used like this:
  *
- * ECS_COMPONENT(world, Location);
+ * ECS_COMPONENT(world, Position);
+ * ecs_entity_t e = ecs_new(world, Position);
  *
- * In this example, "Location" must be a valid C type name. After the macro,
- * the application will have access to a Location_h variable which holds the
- * handle to the new component. */
+ * In this example, "Position" must be a valid C type name. The macro will 
+ * define two local variables, one for a type handle and one for an entity
+ * handle. These handles can be accessed with ecs_type(Position) and 
+ * ecs_entity(Position). */
 #define ECS_COMPONENT(world, id) \
     ECS_ENTITY_VAR(id) = ecs_new_component(world, #id, sizeof(id));\
     ECS_TYPE_VAR(id) = ecs_type_from_entity(world, ecs_entity(id));\
@@ -1750,8 +2089,8 @@ void _ecs_assert(
  * This macro provides a convenient way to register a type with the world.
  * It can be used like this:
  *
- * ECS_TYPE(world, MyType, ComponentA, ComponentB);
- * ecs_entity_t h = ecs_new(world, MyType_h);
+ * ECS_TYPE(world, MyType, Position, Velocity);
+ * ecs_entity_t e = ecs_new(world, MyType);
  *
  * Creating a type and using it with ecs_new/ecs_add is faster
  * than calling ecs_add multiple types. */
@@ -1765,8 +2104,8 @@ void _ecs_assert(
  * This macro provides a convenient way to register a prefab with the world. It
  * can be used like this:
  *
- * ECS_PREFAB(world, MyPrefab, ComponentA, ComponentB);
- * ecs_entity_t h = ecs_new(world, MyPrefab_h);
+ * ECS_PREFAB(world, MyPrefab, Position, Velocity);
+ * ecs_entity_t e = ecs_new_instance(world, MyPrefab);
  *
  * For more specifics, see description of ecs_new_prefab. */
 #define ECS_PREFAB(world, id, ...) \
@@ -1779,14 +2118,14 @@ void _ecs_assert(
  * This macro provides a convenient way to register systems with a world. It can
  * be used like this:
  *
- * ECS_SYSTEM(world, Move, EcsOnUpdate, Location, Speed);
+ * ECS_SYSTEM(world, Move, EcsOnUpdate, Position, Velocity);
  *
  * In this example, "Move" must be the identifier to a C function that matches
  * the signature of ecs_system_action_t. The signature of this component will be
  * "Location, Speed".
  *
- * After the macro, the application will have access to a Move_h variable which
- * holds the handle to the new system. */
+ * After the macro, the application will have access to a Move entity variable 
+ * which can be accessed through ecs_entity(Move). */
 #define ECS_SYSTEM(world, id, kind, ...) \
     ecs_entity_t F##id = ecs_new_system(world, #id, kind, #__VA_ARGS__, id);\
     ecs_entity_t id = F##id;\
@@ -1803,13 +2142,20 @@ void _ecs_assert(
     ecs_set_singleton(world, id, {0});\
     id *handles = ecs_get_singleton_ptr(world, id);\
 
-/** Wrapper around ecs_load.
+/** Wrapper around ecs_import.
  * This macro provides a convenient way to load a module with the world. It can
  * be used like this:
  *
- * ECS_IMPORT(world, EcsSystemsMovement, 0);
- *
- * ecs_enable(world, EcsSystemsMovement_h.Move); */
+ * ECS_IMPORT(world, FlecsSystemsPhysics, 0);
+ * 
+ * This macro will define entity and type handles for the component associated
+ * with the module. An application can retrieve the module component like this:
+ * 
+ * FlecsSystemsPhysics m = ecs_get_singleton(world, FlecsSystemsPhysics);
+ * 
+ * The contents of a module component are module specific, although they
+ * typically contain handles to the content of the module.
+ */
 #define ECS_IMPORT(world, id, flags) \
     id M##id;\
     ECS_ENTITY_VAR(id) = ecs_import(world, id, flags, &M##id);\
@@ -1822,15 +2168,6 @@ void _ecs_assert(
 
 #define ECS_COLUMN(rows, type, id, column)\
     type *id = ecs_column(rows, type, column)
-
-#define ECS_COLUMN_TEST(rows, type, id, column)\
-    type *id = ecs_column_test(rows, type, column)
-
-#define ECS_SHARED(rows, type, id, column)\
-    type *id = ecs_shared(rows, type, column)
-
-#define ECS_SHARED_TEST(rows, type, id, column)\
-    type *id = ecs_shared_test(rows, type, column)
 
 #define ECS_COLUMN_COMPONENT(rows, id, column)\
     ECS_ENTITY_VAR(id) = ecs_column_entity(rows, column);\
@@ -1858,20 +2195,20 @@ void _ecs_assert(
     ECS_TYPE_VAR(entity)
 
 /** Utility macro for setting a component in a module function */
-#define ECS_SET_COMPONENT(handles, type)\
+#define ECS_SET_COMPONENT(type)\
     if (handles) handles->ecs_entity(type) = ecs_entity(type);\
     if (handles) handles->ecs_type(type) = ecs_type(type)
 
 #define ECS_EXPORT_COMPONENT(type)\
-    ECS_SET_COMPONENT(handles, type)
+    ECS_SET_COMPONENT(type)
 
 /** Utility macro for setting a system in a module function */
-#define ECS_SET_ENTITY(handles, entity)\
+#define ECS_SET_ENTITY(entity)\
     if (handles) handles->entity = entity;\
     if (handles) handles->ecs_type(entity) = ecs_type(entity)
 
 #define ECS_EXPORT_ENTITY(type)\
-    ECS_SET_ENTITY(handles, type)
+    ECS_SET_ENTITY(type)
 
 /** Utility macro for declaring handles by modules */
 #define ECS_IMPORT_COMPONENT(handles, type)\
@@ -1889,8 +2226,9 @@ void _ecs_assert(
 
 /** Utility macro for importing all handles for a module from a system column */
 #define ECS_IMPORT_COLUMN(rows, module, column) \
-    module *M##module##_ptr = ecs_shared(rows, module, column);\
+    module *M##module##_ptr = ecs_column(rows, module, column);\
     ecs_assert(M##module##_ptr != NULL, ECS_MODULE_UNDEFINED, #module);\
+    ecs_assert(ecs_is_shared(rows, column), ECS_COLUMN_IS_NOT_SHARED, NULL);\
     module M##module = *M##module##_ptr;\
     module##ImportHandles(M##module)
 

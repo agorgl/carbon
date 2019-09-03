@@ -18,15 +18,54 @@ void calculate_type_stats(
     uint32_t *allocd,
     uint32_t *used)
 {
-    ecs_map_iter_t it = ecs_map_iter(world->main_stage.type_index);
+    (void)world;
+    (void)allocd;
+    (void)used;
+
+    /* TODO: compute memory for type storage */
+
+    /*ecs_map_iter_t it = ecs_map_iter(world->main_stage.type_index);
     while (ecs_map_hasnext(&it)) {
         ecs_vector_t *type = ecs_map_next_ptr(&it);
         ecs_vector_memory(type, &handle_arr_params, allocd, used);
-    }
+    }*/
 }
 
 static
 void calculate_system_stats(
+    ecs_world_t *world,
+    ecs_entity_t system,
+    uint32_t *allocd,
+    uint32_t *used)
+{
+    EcsColSystem *sys = ecs_get_ptr(world, system, EcsColSystem);
+    if (!sys) {
+        return;
+    }
+
+    ecs_vector_memory(sys->base.columns, &system_column_params, allocd, used);
+    ecs_vector_memory(sys->tables, &matched_table_params, allocd, used);
+    ecs_vector_memory(sys->inactive_tables, &matched_table_params, allocd, used);
+    ecs_vector_memory(sys->jobs, &job_arr_params, allocd, used);
+
+    int i, count = ecs_vector_count(sys->tables);
+    ecs_matched_table_t *tables = ecs_vector_first(sys->tables);
+
+    for (i = 0; i < count; i++) {
+        /* For tables[i].columns */
+        *allocd += ecs_vector_count(sys->base.columns) * sizeof(uint32_t);
+        *used += ecs_vector_count(sys->base.columns) * sizeof(uint32_t);
+
+        /* For tables[i].components */
+        *allocd += ecs_vector_count(sys->base.columns) * sizeof(ecs_entity_t);
+        *used += ecs_vector_count(sys->base.columns) * sizeof(ecs_entity_t);
+
+        ecs_vector_memory(tables[i].references, &reference_params, allocd, used);
+    }
+}
+
+static
+void calculate_systems_stats(
     ecs_world_t *world,
     ecs_vector_t *systems,
     uint32_t *allocd,
@@ -35,17 +74,7 @@ void calculate_system_stats(
     ecs_entity_t *buffer = ecs_vector_first(systems);
     uint32_t i, count = ecs_vector_count(systems);
     for (i = 0; i < count; i ++) {
-        EcsColSystem *sys = ecs_get_ptr(world, buffer[i], EcsColSystem);
-        if (!sys) {
-            continue;
-        }
-        
-        ecs_vector_memory(sys->base.columns, &column_arr_params, allocd, used);
-        ecs_vector_memory(sys->components, &handle_arr_params, allocd, used);
-        ecs_vector_memory(sys->inactive_tables, &sys->table_params, allocd, used);
-        ecs_vector_memory(sys->jobs, &job_arr_params, allocd, used);
-        ecs_vector_memory(sys->tables, &sys->table_params, allocd, used);
-        ecs_vector_memory(sys->refs, &sys->ref_params, allocd, used);
+        calculate_system_stats(world, buffer[i], allocd, used);
     }
 }
 
@@ -55,10 +84,11 @@ void calculate_table_stats(
     uint32_t *allocd,
     uint32_t *used)
 {
-    ecs_table_t *buffer = ecs_vector_first(world->main_stage.tables);
-    uint32_t i, count = ecs_vector_count(world->main_stage.tables);
+    ecs_chunked_t *tables = world->main_stage.tables;
+    uint32_t i, count = ecs_chunked_count(tables);
+
     for (i = 0; i < count; i ++) {
-        ecs_table_t *table = &buffer[i];
+        ecs_table_t *table = ecs_chunked_get(tables, ecs_table_t, i);
         ecs_vector_memory(table->frame_systems, &handle_arr_params, allocd, used);
         *allocd += ecs_vector_count(table->type) * sizeof(uint16_t);
         *used += ecs_vector_count(table->type) * sizeof(uint16_t);
@@ -80,10 +110,10 @@ void calculate_stage_stats(
     }
 
     if (!is_temp_stage) {
-        ecs_map_memory(stage->type_index, allocd, used);
+        /* ecs_map_memory(stage->type_index, allocd, used); */
     }
     
-    ecs_vector_memory(stage->tables, &table_arr_params, allocd, used);
+    ecs_chunked_memory(stage->tables, allocd, used);
     ecs_map_memory(stage->table_index, allocd, used);
 
     if (!is_main_stage) {
@@ -128,24 +158,21 @@ void get_memory_stats(
     ecs_vector_memory(world->post_update_systems, &handle_arr_params, &memory->systems.allocd, &memory->systems.used);
     ecs_vector_memory(world->pre_store_systems, &handle_arr_params, &memory->systems.allocd, &memory->systems.used);
     ecs_vector_memory(world->on_store_systems, &handle_arr_params, &memory->systems.allocd, &memory->systems.used);
-    ecs_vector_memory(world->tasks, &handle_arr_params, &memory->systems.allocd, &memory->systems.used);
     ecs_vector_memory(world->inactive_systems, &handle_arr_params, &memory->systems.allocd, &memory->systems.used);
     ecs_vector_memory(world->on_demand_systems, &handle_arr_params, &memory->systems.allocd, &memory->systems.used);
 
-    calculate_system_stats(world, world->on_load_systems, &memory->systems.allocd, &memory->systems.used);
-    calculate_system_stats(world, world->post_load_systems, &memory->systems.allocd, &memory->systems.used);
-    calculate_system_stats(world, world->pre_update_systems, &memory->systems.allocd, &memory->systems.used);
-    calculate_system_stats(world, world->on_update_systems, &memory->systems.allocd, &memory->systems.used);
-    calculate_system_stats(world, world->on_validate_systems, &memory->systems.allocd, &memory->systems.used);
-    calculate_system_stats(world, world->post_update_systems, &memory->systems.allocd, &memory->systems.used);
-    calculate_system_stats(world, world->pre_store_systems, &memory->systems.allocd, &memory->systems.used);
-    calculate_system_stats(world, world->on_store_systems, &memory->systems.allocd, &memory->systems.used);
-    calculate_system_stats(world, world->tasks, &memory->systems.allocd, &memory->systems.used);
-    calculate_system_stats(world, world->inactive_systems, &memory->systems.allocd, &memory->systems.used);
-    calculate_system_stats(world, world->on_demand_systems, &memory->systems.allocd, &memory->systems.used);
+    calculate_systems_stats(world, world->on_load_systems, &memory->systems.allocd, &memory->systems.used);
+    calculate_systems_stats(world, world->post_load_systems, &memory->systems.allocd, &memory->systems.used);
+    calculate_systems_stats(world, world->pre_update_systems, &memory->systems.allocd, &memory->systems.used);
+    calculate_systems_stats(world, world->on_update_systems, &memory->systems.allocd, &memory->systems.used);
+    calculate_systems_stats(world, world->on_validate_systems, &memory->systems.allocd, &memory->systems.used);
+    calculate_systems_stats(world, world->post_update_systems, &memory->systems.allocd, &memory->systems.used);
+    calculate_systems_stats(world, world->pre_store_systems, &memory->systems.allocd, &memory->systems.used);
+    calculate_systems_stats(world, world->on_store_systems, &memory->systems.allocd, &memory->systems.used);
+    calculate_systems_stats(world, world->inactive_systems, &memory->systems.allocd, &memory->systems.used);
+    calculate_systems_stats(world, world->on_demand_systems, &memory->systems.allocd, &memory->systems.used);
 
     ecs_map_memory(world->type_handles, &memory->families.allocd, &memory->families.used);
-    ecs_map_memory(world->prefab_index, &memory->families.allocd, &memory->families.used);
     calculate_type_stats(world, &memory->families.allocd, &memory->families.used);
     calculate_table_stats(world, &memory->tables.allocd, &memory->tables.used);
 
@@ -202,14 +229,12 @@ void set_system_stats(
     EcsSystem *system_ptr = ecs_get_ptr(world, system, EcsColSystem);
     if (system_ptr) {
         EcsColSystem *col_system = (EcsColSystem*)system_ptr;
-        ecs_vector_t *tables = col_system->tables;
-        uint32_t i, count = ecs_vector_count(tables);
+        ecs_matched_table_t *tables = ecs_vector_first(col_system->tables);
+        uint32_t i, count = ecs_vector_count(col_system->tables);
 
         sstats->entities_matched = 0;
         for (i = 0; i < count; i ++) {
-            int32_t *index = ecs_vector_get(tables, &col_system->table_params, i);
-            ecs_table_t *table = ecs_vector_get(
-                world->main_stage.tables, &table_arr_params, *index);
+            ecs_table_t *table = tables[i].table;
             sstats->entities_matched += ecs_table_count(table);
         }
 
@@ -351,11 +376,11 @@ void collect_comp_stats(
     uint32_t *memory_allocd,
     uint32_t *memory_used)
 {
-    ecs_table_t *tables = ecs_vector_first(world->main_stage.tables);
-    uint32_t i, count = ecs_vector_count(world->main_stage.tables);
+    ecs_chunked_t *tables = world->main_stage.tables;
+    uint32_t i, count = ecs_chunked_count(world->main_stage.tables);
 
     for (i = 0; i < count; i ++) {
-        ecs_table_t *table = &tables[i];
+        ecs_table_t *table = ecs_chunked_get(tables, ecs_table_t, i);
         ecs_entity_t *components = ecs_vector_first(table->type);
 
         uint32_t c, c_count = ecs_vector_count(table->type);
@@ -382,7 +407,7 @@ void ecs_get_stats(
     collect_comp_stats(world, stats, &mem_allocd, &mem_used);
 
     stats->component_count = ecs_vector_count(stats->components);
-    stats->table_count = ecs_vector_count(world->main_stage.tables);
+    stats->table_count = ecs_chunked_count(world->main_stage.tables);
 
     if (!stats->features) {
         stats->features = ecs_vector_new(&featurestats_arr_params, 0);
@@ -392,11 +417,10 @@ void ecs_get_stats(
 
     ecs_map_iter_t it = ecs_map_iter(world->type_handles);
     while (ecs_map_hasnext(&it)) {
-        ecs_entity_t h = ecs_map_next_w_key(&it, NULL);
+        ecs_entity_t h = *(ecs_entity_t*)ecs_map_next_w_key(&it, NULL);
         EcsTypeComponent *data = ecs_get_ptr(world, h, EcsTypeComponent);
-        ecs_vector_t *type = ecs_map_get(world->main_stage.type_index, data->resolved);
-        ecs_entity_t *buffer = ecs_vector_first(type);
-        uint32_t i, count = ecs_vector_count(type);
+        ecs_entity_t *buffer = ecs_vector_first(data->resolved);
+        uint32_t i, count = ecs_vector_count(data->resolved);
 
         EcsFeatureStats feature = {0};
         for (i = 0; i < count; i ++) {
@@ -417,7 +441,7 @@ void ecs_get_stats(
                 &stats->features, &featurestats_arr_params);
             *elem = feature;
             elem->id = ecs_get_id(world, h);
-            elem->entities = _ecs_type_str(world, data->type);
+            elem->entities = ecs_type_to_expr(world, data->type);
             elem->is_hidden = ecs_has(world, h, EcsHidden);
         }
     }
@@ -440,8 +464,6 @@ void ecs_get_stats(
         world, &stats->pre_store_systems, world->pre_store_systems);
     stats->system_count += system_stats_arr(
         world, &stats->on_store_systems, world->on_store_systems);
-    stats->system_count += system_stats_arr(
-        world, &stats->task_systems, world->tasks);
     stats->system_count += system_stats_arr(
         world, &stats->on_demand_systems, world->on_demand_systems);
 
@@ -468,12 +490,12 @@ void ecs_get_stats(
     stats->memory.systems.used += system_memory;
     stats->memory.systems.allocd += system_memory;
 
-    uint32_t type_memory = ecs_map_count(world->main_stage.type_index) *
+/*     uint32_t type_memory = ecs_map_count(world->main_stage.type_index) *
       (sizeof(EcsTypeComponent) + sizeof(EcsId));
     stats->memory.components.used -= type_memory;
     stats->memory.components.allocd -= type_memory;
     stats->memory.families.used += type_memory;
-    stats->memory.families.allocd += type_memory;
+    stats->memory.families.allocd += type_memory; */
 
     stats->entity_count = ecs_map_count(world->main_stage.entity_index);
     stats->tick_count = world->tick;

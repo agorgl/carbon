@@ -13,6 +13,7 @@ void _ecs_abort(
     } else {
         ecs_os_err("abort %s:%d: %s", file, line, ecs_strerror(error_code));
     }
+
     ecs_os_abort();
 }
 
@@ -42,12 +43,16 @@ const char* ecs_strerror(
     switch (error_code) {
     case ECS_INVALID_HANDLE:
         return "invalid handle";
-    case ECS_INVALID_PARAMETERS:
+    case ECS_INVALID_PARAMETER:
         return "invalid parameters";
     case ECS_INVALID_COMPONENT_ID:
         return "invalid component id";
-    case ECS_INVALID_COMPONENT_EXPRESSION:
-        return "invalid component expression for system";
+    case ECS_INVALID_TYPE_EXPRESSION:
+        return "invalid type expression";
+    case ECS_INVALID_SIGNATURE:
+        return "invalid system signature";
+    case ECS_INVALID_EXPRESSION:
+        return "invalid type expression/signature";
     case ECS_MISSING_SYSTEM_CONTEXT:
         return "missing system context";
     case ECS_UNKNOWN_COMPONENT_ID:
@@ -62,7 +67,7 @@ const char* ecs_strerror(
         return "internal error";
     case ECS_MORE_THAN_ONE_PREFAB:
         return "more than one prefab added to entity";
-    case ECS_ENTITY_ALREADY_DEFINED:
+    case ECS_ALREADY_DEFINED:
         return "entity has already been defined";
     case ECS_INVALID_COMPONENT_SIZE:
         return "the specified size does not match the component";
@@ -76,6 +81,10 @@ const char* ecs_strerror(
         return "column is not shared";
     case ECS_COLUMN_IS_SHARED:
         return "column is shared";
+    case ECS_COLUMN_HAS_NO_DATA:
+        return "column has no data";
+    case ECS_COLUMN_TYPE_MISMATCH:
+        return "column retrieved with mismatching type";
     case ECS_INVALID_WHILE_MERGING:
         return "operation is invalid while merging";
     case ECS_INVALID_WHILE_ITERATING:
@@ -94,6 +103,12 @@ const char* ecs_strerror(
         return "failed to create thread";
     case ECS_MISSING_OS_API:
         return "missing implementation for OS API function";
+    case ECS_TYPE_TOO_LARGE:
+        return "type contains too many entities";
+    case ECS_INVALID_PREFAB_CHILD_TYPE:
+        return "a prefab child type must have at least one INSTANCEOF element";
+    case ECS_UNSUPPORTED:
+        return "operation is unsupported";
     }
 
     return "unknown error code";

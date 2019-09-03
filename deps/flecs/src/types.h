@@ -1,7 +1,10 @@
 #ifndef FLECS_TYPES_PRIVATE_H
 #define FLECS_TYPES_PRIVATE_H
 
+#ifndef __MACH__
 #define _POSIX_C_SOURCE 200809L
+#endif
+
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
@@ -35,6 +38,13 @@
 #define ECS_TABLE_INITIAL_ROW_COUNT (0)
 #define ECS_SYSTEM_INITIAL_TABLE_COUNT (0)
 #define ECS_MAX_JOBS_PER_WORKER (16)
+
+/* This is _not_ the max number of entities that can be of a given type. This 
+ * constant defines the maximum number of components, prefabs and parents can be
+ * in one type. This limit serves two purposes: detect errors earlier (assert on
+ * very large types) and allow for more efficient allocation strategies (like
+ * using alloca for temporary buffers). */
+#define ECS_MAX_ENTITIES_IN_TYPE (256)
 
 #define ECS_WORLD_MAGIC (0x65637377)
 #define ECS_THREAD_MAGIC (0x65637374)
@@ -83,10 +93,11 @@ typedef struct EcsPrefabBuilder {
 /** Type that is used by systems to indicate where to fetch a component from */
 typedef enum ecs_system_expr_elem_kind_t {
     EcsFromSelf,            /* Get component from self (default) */
+    EcsFromOwned,           /* Get owned component from self */
+    EcsFromShared,          /* Get shared component from self */
     EcsFromContainer,       /* Get component from container */
     EcsFromSystem,          /* Get component from system */
-    EcsFromId,              /* Get entity handle by id */
-    EcsFromSingleton,       /* Get singleton component */
+    EcsFromEmpty,           /* Get entity handle by id */
     EcsFromEntity,          /* Get component from other entity */
     EcsCascade              /* Walk component in cascading (hierarchy) order */
 } ecs_system_expr_elem_kind_t;
@@ -120,21 +131,61 @@ typedef struct ecs_system_column_t {
     ecs_entity_t source;             /* Source entity (used with FromEntity) */
 } ecs_system_column_t;
 
+/** A table column describes a single column in a table (archetype) */
+typedef struct ecs_table_column_t {
+    ecs_vector_t *data;              /* Column data */
+    uint16_t size;                   /* Column size (saves component lookups) */
+} ecs_table_column_t;
+
+#define EcsTableIsStaged  (1)
+#define EcsTableIsPrefab (2)
+#define EcsTableHasPrefab (4)
+
+/** A table is the Flecs equivalent of an archetype. Tables store all entities
+ * with a specific set of components. Tables are automatically created when an
+ * entity has a set of components not previously observed before. When a new
+ * table is created, it is automatically matched with existing column systems */
+typedef struct ecs_table_t {
+    ecs_table_column_t *columns;      /* Columns storing components of array */
+    ecs_vector_t *frame_systems;      /* Frame systems matched with table */
+    ecs_type_t type;                  /* Identifies table type in type_index */
+    uint32_t flags;                   /* Flags for testing table properties */
+ } ecs_table_t;
+
+/** Type containing data for a table matched with a system */
+typedef struct ecs_matched_table_t {
+    ecs_table_t *table;             /* Reference to the table */
+    int32_t *columns;               /* Mapping of system columns to table */
+    ecs_entity_t *components;       /* Actual components of system columns */
+    ecs_vector_t *references;       /* Reference columns and cached pointers */
+    int32_t depth;                  /* Depth of table (when using CASCADE) */
+} ecs_matched_table_t;
+
 /** Base type for a system */
 typedef struct EcsSystem {
     ecs_system_action_t action;    /* Callback to be invoked for matching rows */
     const char *signature;         /* Signature with which system was created */
     ecs_vector_t *columns;         /* Column components */
-    ecs_type_t not_from_entity;    /* Exclude components from entity */
+    void *ctx;                     /* User data */
+
+    /* Precomputed types for quick comparisons */
+    ecs_type_t not_from_self;      /* Exclude components from self */
+    ecs_type_t not_from_owned;     /* Exclude components from self only if owned */
+    ecs_type_t not_from_shared;     /* Exclude components from self only if shared */
     ecs_type_t not_from_component; /* Exclude components from components */
-    ecs_type_t and_from_entity;    /* Which components are required from entity */
+    ecs_type_t and_from_self;      /* Which components are required from entity */
+    ecs_type_t and_from_owned;      /* Which components are required from entity */
+    ecs_type_t and_from_shared;      /* Which components are required from entity */
     ecs_type_t and_from_system;    /* Used to auto-add components to system */
+    
     int32_t cascade_by;            /* CASCADE column index */
     EcsSystemKind kind;            /* Kind of system */
     float time_spent;              /* Time spent on running system */
     bool enabled;                  /* Is system enabled or not */
     bool has_refs;                 /* Does the system have reference columns */
-    bool match_prefabs;            /* Should this system match prefabs */
+    bool needs_tables;             /* Does the system need table matching */
+    bool match_prefab;             /* Should this system match prefabs */
+    bool match_disabled;           /* Should this system match disabled entities */
 } EcsSystem;
 
 /** A column system is a system that is ran periodically (default = every frame)
@@ -178,14 +229,12 @@ typedef struct EcsSystem {
 typedef struct EcsColSystem {
     EcsSystem base;
     ecs_entity_t entity;                  /* Entity id of system, used for ordering */
-    ecs_vector_t *components;             /* Computed component list per matched table */
-    ecs_vector_t *inactive_tables;        /* Inactive tables */
     ecs_vector_t *jobs;                   /* Jobs for this system */
-    ecs_vector_t *tables;                 /* Table index + refs index + column offsets */
-    ecs_vector_t *refs;                   /* Columns that point to other entities */
-    ecs_vector_params_t table_params;     /* Parameters for tables array */
-    ecs_vector_params_t component_params; /* Parameters for components array */
-    ecs_vector_params_t ref_params;       /* Parameters for tables array */
+    ecs_vector_t *tables;                 /* Vector with matched tables */
+    ecs_vector_t *inactive_tables;        /* Inactive tables */
+    ecs_vector_params_t column_params;    /* Parameters for table_columns */
+    ecs_vector_params_t component_params; /* Parameters for components */
+    ecs_vector_params_t ref_params;       /* Parameters for refs */
     float period;                         /* Minimum period inbetween system invocations */
     float time_passed;                    /* Time passed since last invocation */
 } EcsColSystem;
@@ -198,39 +247,41 @@ typedef struct EcsRowSystem {
     EcsSystem base;
     ecs_vector_t *components;       /* Components in order of signature */
 } EcsRowSystem;
-
-
-/* -- Private types -- */
-
-/** A table column describes a single column in a table (archetype) */
-typedef struct ecs_table_column_t {
-    ecs_vector_t *data;              /* Column data */
-    uint16_t size;                   /* Column size (saves component lookups) */
-} ecs_table_column_t;
-
-#define EcsTableIsStaged  (1)
-#define EcsTableIsPrefab (2)
-#define EcsTableHasPrefab (4)
-
-/** A table is the Flecs equivalent of an archetype. Tables store all entities
- * with a specific set of components. Tables are automatically created when an
- * entity has a set of components not previously observed before. When a new
- * table is created, it is automatically matched with existing column systems */
-typedef struct ecs_table_t {
-    ecs_vector_t *type;               /* Reference to type_index entry */
-    ecs_table_column_t *columns;      /* Columns storing components of array */
-    ecs_vector_t *frame_systems;      /* Frame systems matched with table */
-    ecs_type_t type_id;               /* Identifies table type in type_index */
-    uint32_t flags;                   /* Flags for testing table properties */
- } ecs_table_t;
  
 /** The ecs_row_t struct is a 64-bit value that describes in which table
- * (identified by a type_id) is stored, at which index. Entries in the 
+ * (identified by a type) is stored, at which index. Entries in the 
  * world::entity_index are of type ecs_row_t. */
 typedef struct ecs_row_t {
-    ecs_type_t type_id;           /* Identifies a type (and table) in world */
+    ecs_type_t type;              /* Identifies a type (and table) in world */
     int32_t index;                /* Index of the entity in its table */
 } ecs_row_t;
+
+#define ECS_TYPE_DB_MAX_CHILD_NODES (256)
+#define ECS_TYPE_DB_BUCKET_COUNT (256)
+
+/** The ecs_type_node_t type is a node in a hierarchical structure that allows
+ * for quick lookups of types. A node represents a type, and its direct children
+ * represent types with one additional entity. For example, given a node [A],
+ * [A, B] would be a child node.
+ * 
+ * Child nodes are looked up directly using the entity id. For example, node [A]
+ * will be stored at root.nodes[A]. Children entity ids are offset by their 
+ * parent, such that [A, B] is stored at root.nodes[A].nodes[B - A].
+ * 
+ * If the offset exceeds ECS_TYPE_DB_MAX_CHILD_NODES, the type will be stored in
+ * the types map. This map is keyed by the hash of the type relative to its
+ * parent. For example, the hash for type [A, B, C] will be computed on [B, C]
+ * if its parent is [A]. */
+typedef struct ecs_type_link_t {
+    ecs_type_t type;                /* type of current node */
+    struct ecs_type_link_t *next;   /* next link (for iterating linearly) */
+} ecs_type_link_t;
+
+typedef struct ecs_type_node_t {
+    ecs_vector_t *nodes;    /* child nodes - <ecs_entity_t, ecs_type_node_t> */
+    ecs_vector_t **types;   /* child types w/large entity offsets - <hash, vector<ecs_type_link_t>> */
+    ecs_type_link_t link;     
+} ecs_type_node_t;
 
 /** A stage is a data structure in which delta's are stored until it is safe to
  * merge those delta's with the main world stage. A stage allows flecs systems
@@ -246,9 +297,10 @@ typedef struct ecs_stage_t {
     /* If this is not a thread
      * stage, these are the same
      * as the main stage */
-    ecs_map_t *table_index;        /* Index for table stage */
-    ecs_vector_t *tables;          /* Tables created while >1 threads running */
-    ecs_map_t *type_index;         /* Types created while >1 threads running */
+    ecs_type_node_t type_root;     /* Hierarchical type store (& first link) */
+    ecs_type_link_t *last_link;    /* Link to last registered type */
+    ecs_chunked_t *tables;         /* Tables created while >1 threads running */
+    ecs_map_t *table_index;        /* Lookup table by type */
 
     /* These occur only in
      * temporary stages, and
@@ -271,10 +323,11 @@ typedef struct ecs_stage_t {
  * related to an entity is only looked up once. */
 typedef struct ecs_entity_info_t {
     ecs_entity_t entity;
-    ecs_type_t type_id;
-    uint32_t index;
+    ecs_type_t type;
+    int32_t index;
     ecs_table_t *table;
     ecs_table_column_t *columns;
+    bool is_watched;
 
     /* Used for determining if ecs_entity_info_t should be invalidated */
     ecs_stage_t *stage;
@@ -336,13 +389,11 @@ struct ecs_world {
 
     /* -- Tasks -- */
 
-    ecs_vector_t *tasks;              /* Periodic actions not invoked on entities */
     ecs_vector_t *fini_tasks;         /* Tasks to execute on ecs_fini */
 
 
     /* -- Lookup Indices -- */
 
-    ecs_map_t *prefab_index;          /* Index to find prefabs in families */
     ecs_map_t *prefab_parent_index;   /* Index to find flag for prefab parent */
     ecs_map_t *type_sys_add_index;    /* Index to find add row systems for type */
     ecs_map_t *type_sys_remove_index; /* Index to find remove row systems for type*/
@@ -390,6 +441,7 @@ struct ecs_world {
     float merge_time;             /* Time spent on merging */
     float target_fps;             /* Target fps */
     float fps_sleep;              /* Sleep time to prevent fps overshoot */
+    float world_time;             /* Time since start of simulation */
 
 
     /* -- Settings from command line arguments -- */
@@ -419,7 +471,10 @@ extern const ecs_vector_params_t stage_arr_params;
 extern const ecs_vector_params_t table_arr_params;
 extern const ecs_vector_params_t thread_arr_params;
 extern const ecs_vector_params_t job_arr_params;
-extern const ecs_vector_params_t column_arr_params;
 extern const ecs_vector_params_t builder_params;
+extern const ecs_vector_params_t system_column_params;
+extern const ecs_vector_params_t matched_table_params;
+extern const ecs_vector_params_t matched_column_params;
+extern const ecs_vector_params_t reference_params;
 
 #endif

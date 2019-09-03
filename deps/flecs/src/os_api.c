@@ -18,7 +18,7 @@ void ecs_os_set_api(
     }
 }
 
-/* When flecs is built with bake, use threading functions from bake.util */
+/* When flecs is built with bake, use functions from bake.util */
 #ifdef __BAKE__
 
 static
@@ -103,6 +103,47 @@ void bake_log(
         ecs_os_log("%s", msg);
     }
 }
+
+static
+ecs_os_dl_t bake_dlopen(
+    const char *dlname)
+{
+    return (ecs_os_dl_t)ut_dl_open(dlname);
+}
+
+static
+void bake_dlclose(
+    ecs_os_dl_t dl)
+{
+    ut_dl_close((ut_dl)dl);
+}
+
+static
+ecs_os_proc_t bake_dlproc(
+    ecs_os_dl_t dl,
+    const char *procname)
+{
+    ecs_os_proc_t result = (ecs_os_proc_t)ut_dl_proc((ut_dl)dl, procname);
+    if (!result) {
+        ut_raise();
+    }
+    return result;
+}
+
+static
+char* bake_module_to_dl(
+    const char *module_id)
+{
+    const char *result = ut_locate(module_id, NULL, UT_LOCATE_LIB);
+    if (result) {
+        return ut_strdup(result);
+    } else {
+        return NULL;
+    }
+}
+
+
+/* __BAKE__ */
 #endif
 
 static
@@ -128,6 +169,13 @@ void ecs_log_debug(const char *fmt, va_list args) {
     }
 }
 
+static
+void ecs_log_warning(const char *fmt, va_list args) {
+    fprintf(stderr, "[warn] ");
+    vfprintf(stderr, fmt, args);
+    fprintf(stderr, "\n");
+}
+
 void ecs_os_dbg(const char *fmt, ...) {
 #ifndef NDEBUG
     va_list args;
@@ -139,6 +187,15 @@ void ecs_os_dbg(const char *fmt, ...) {
 #else
     (void)fmt;
 #endif
+}
+
+void ecs_os_warn(const char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    if (ecs_os_api.log_warning) {
+        ecs_os_api.log_warning(fmt, args);
+    }
+    va_end(args);
 }
 
 void ecs_os_log(const char *fmt, ...) {
@@ -163,7 +220,11 @@ void ecs_os_enable_dbg(bool enable) {
     ecs_os_api_debug_enabled = enable;
 }
 
-void ecs_os_gettime(ecs_time_t* timeOut)
+bool ecs_os_dbg_enabled(void) {
+    return ecs_os_api_debug_enabled;
+}
+
+void ecs_os_gettime(ecs_time_t *timeOut)
 {
     uint64_t now = ecs_os_time_now();
     timeOut->sec = now / 1000000000;
@@ -199,16 +260,23 @@ void ecs_os_set_api_defaults(void)
     _ecs_os_api->cond_broadcast = bake_cond_broadcast;
     _ecs_os_api->cond_wait = bake_cond_wait;
 
-    _ecs_os_api->sleep = ut_sleep;
+    _ecs_os_api->dlopen = bake_dlopen;
+    _ecs_os_api->dlproc = bake_dlproc;
+    _ecs_os_api->dlclose = bake_dlclose;
+
+    _ecs_os_api->module_to_dl = bake_module_to_dl;
 
     ut_log_handlerRegister(bake_log, NULL);
-
+/* __BAKE__ */
 #endif
-     _ecs_os_api->get_time = ecs_os_gettime;
+
+    _ecs_os_api->sleep = ecs_os_time_sleep;
+    _ecs_os_api->get_time = ecs_os_gettime;
 
     _ecs_os_api->log = ecs_log;
     _ecs_os_api->log_error = ecs_log_error;
     _ecs_os_api->log_debug = ecs_log_debug;
+    _ecs_os_api->log_warning = ecs_log_warning;
 
     _ecs_os_api->abort = abort;
 }

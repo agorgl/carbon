@@ -15,7 +15,8 @@ typedef struct ecs_map_iter_t {
 
 FLECS_EXPORT
 ecs_map_t* ecs_map_new(
-    uint32_t size);
+    uint32_t size,
+    uint32_t elem_size);
 
 FLECS_EXPORT
 void ecs_map_free(
@@ -37,6 +38,15 @@ uint32_t ecs_map_set_size(
     uint32_t size);
 
 FLECS_EXPORT
+uint32_t ecs_map_data_size(
+    ecs_map_t *map);
+
+FLECS_EXPORT
+uint32_t ecs_map_grow(
+    ecs_map_t *map,
+    uint32_t size);
+
+FLECS_EXPORT
 uint32_t ecs_map_bucket_count(
     ecs_map_t *map);
 
@@ -45,32 +55,29 @@ void ecs_map_clear(
     ecs_map_t *map);
 
 FLECS_EXPORT
-void ecs_map_set64(
+void* _ecs_map_set(
     ecs_map_t *map,
     uint64_t key_hash,
-    uint64_t data);
+    const void *data,
+    uint32_t size);
 
-#define ecs_map_set(map, key_hash, data) \
-    ecs_map_set64(map, key_hash, (uintptr_t)data)
-
-FLECS_EXPORT
-uint64_t ecs_map_get64(
-    ecs_map_t *map,
-    uint64_t key_hash);
+#define ecs_map_set(map, key, data)\
+    _ecs_map_set(map, key, data, sizeof(*data));
 
 FLECS_EXPORT
-uint64_t* ecs_map_get_ptr(
-    ecs_map_t *map,
-    uint64_t key_hash);
-
-#define ecs_map_get(map, key_hash) \
-    (void*)(uintptr_t)ecs_map_get64(map, key_hash)
-
-FLECS_EXPORT
-bool ecs_map_has(
+bool _ecs_map_has(
     ecs_map_t *map,
     uint64_t key_hash,
-    uint64_t *value_out);
+    void *value_out,
+    uint32_t size);
+
+#define ecs_map_has(map, key, data)\
+    _ecs_map_has(map, key, data, sizeof(*(data)))
+
+FLECS_EXPORT
+void* ecs_map_get_ptr(
+    ecs_map_t *map,
+    uint64_t key_hash);
 
 FLECS_EXPORT
 int ecs_map_remove(
@@ -86,22 +93,42 @@ bool ecs_map_hasnext(
     ecs_map_iter_t *it);
 
 FLECS_EXPORT
-uint64_t ecs_map_next(
+void* ecs_map_next(
     ecs_map_iter_t *it);
 
 FLECS_EXPORT
-void* ecs_map_next_ptr(
-    ecs_map_iter_t *iter_data);
+void* ecs_map_next_w_size(
+    ecs_map_iter_t *it,
+    size_t size);
+
+#define ecs_map_next32(it)\
+    *(uint32_t*)ecs_map_next_w_size(it, sizeof(uint32_t))
+
+#define ecs_map_next64(it)\
+    *(uint64_t*)ecs_map_next_w_size(it, sizeof(uint64_t))
+
+#define ecs_map_nextptr(it)\
+    *(void**)ecs_map_next_w_size(it, sizeof(void*))    
 
 FLECS_EXPORT
-uint64_t ecs_map_next_w_key(
+void* ecs_map_next_w_key(
     ecs_map_iter_t *it,
     uint64_t *key_out);
 
 FLECS_EXPORT
-void* ecs_map_next_ptr_w_key(
+void* ecs_map_next_w_key_w_size(
     ecs_map_iter_t *it,
-    uint64_t *key_out);
+    uint64_t *key_out,
+    size_t size);
+
+#define ecs_map_next32_w_key(it, key_out)\
+    *(uint32_t*)ecs_map_next_w_key_w_size(it, key_out, sizeof(uint32_t))
+
+#define ecs_map_next64_w_key(it, key_out)\
+    *(uint64_t*)ecs_map_next_w_key_w_size(it, key_out, sizeof(uint64_t))
+
+#define ecs_map_nextptr_w_key(it, key_out)\
+    *(void**)ecs_map_next_w_key_w_size(it, key_out, sizeof(void*))   
 
 #ifdef __cplusplus
 }
