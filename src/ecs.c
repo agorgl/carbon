@@ -39,7 +39,7 @@ static void propagate_dirty_flag_system(ecs_rows_t* rows)
 static void transform_system(ecs_rows_t* rows)
 {
     ECS_COLUMN(rows, transform, tarr, 1);
-    ECS_SHARED_TEST(rows, transform, parent, 2);
+    ECS_COLUMN(rows, transform, parent, 2);
     ECS_COLUMN_ENTITY(rows, pdflag, 3);
 
     /* Parent matrix */
@@ -211,9 +211,9 @@ void ecs_setup_internal(ecs_world_t* world)
     ECS_COMPONENT(world, model);
 
     /* Register internal systems */
-    ECS_SYSTEM(world, propagate_dirty_flag_system, EcsManual, transform, CONTAINER.EcsContainer);
+    ECS_SYSTEM(world, propagate_dirty_flag_system, EcsManual, transform, CONTAINER.transform);
     ECS_SYSTEM(world, transform_add_system, EcsOnAdd, transform);
-    ECS_SYSTEM(world, transform_system, EcsOnUpdate, transform, CASCADE.transform, ID.propagate_dirty_flag_system);
+    ECS_SYSTEM(world, transform_system, EcsOnUpdate, transform, CASCADE.transform, .propagate_dirty_flag_system);
     ECS_SYSTEM(world, prepare_renderer_inputs_system, EcsManual, transform, model);
     ECS_SYSTEM(world, model_add_system, EcsOnAdd, model);
 }

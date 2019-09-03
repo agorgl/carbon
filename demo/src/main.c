@@ -49,11 +49,9 @@ int main(int argc, char* argv[])
 
     /* Declare transform type */
     ecs_entity_t ecs_entity(transform) = ecs_lookup(world, "transform");
-    ecs_type_t ecs_type(transform) = ecs_type_from_entity(world, ecs_entity(transform));
 
     /* Declare model type */
     ecs_entity_t ecs_entity(model) = ecs_lookup(world, "model");
-    ecs_type_t ecs_type(model) = ecs_type_from_entity(world, ecs_entity(model));
 
     /* Create sample model resource */
     rid sample_model = resmngr_model_sample(rmgr);
