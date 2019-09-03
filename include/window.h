@@ -127,6 +127,9 @@ const char* window_get_title(window wnd);
 /* Sets a window title suffix (used for live info) */
 void window_set_title_suffix(window wnd, const char* suffix);
 
+/* Returns the default framebuffer's resolution */
+void window_get_framebuffer_size(window wnd, int* width, int* height);
+
 /* Returns the address of the specified OpenGL (ES) core or extension function */
 void* window_get_proc_address(const char* proc_name);
 

@@ -337,6 +337,11 @@ void window_set_title_suffix(window wnd, const char* suffix)
     glfw_update_title(wnd->wnd_handle, wnd->title, wnd->title_suffix);
 }
 
+void window_get_framebuffer_size(window wnd, int* width, int* height)
+{
+    glfwGetFramebufferSize(wnd->wnd_handle, width, height);
+}
+
 void* window_get_proc_address(const char* proc_name)
 {
     return glfwGetProcAddress(proc_name);
