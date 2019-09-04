@@ -31,6 +31,8 @@
 #ifndef _MAINLOOP_H_
 #define _MAINLOOP_H_
 
+#include <stdlib.h>
+
 /*
  * Frame update function
  * Passes back userdata along with update dt
@@ -52,7 +54,17 @@ typedef struct mainloop_params {
     void* userdata;
 } mainloop_params;
 
+/* Mainloop performance state */
+#define MAX_PERF_SAMPLES 256
+typedef struct mainloop_perf_data {
+    struct mainloop_perf_counter {
+        float average;
+        float samples[MAX_PERF_SAMPLES];
+        size_t cur_sample, num_samples;
+    } update, render, total;
+} mainloop_perf_data;
+
 /* Mainloop runner */
-void mainloop(const mainloop_params* params);
+void mainloop(const mainloop_params* params, mainloop_perf_data* perf_data);
 
 #endif /* ! _MAINLOOP_H_ */

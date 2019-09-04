@@ -14,6 +14,7 @@
 
 struct engine {
     mainloop_params ml_params;
+    mainloop_perf_data ml_perf_data;
     window wnd;
     renderer renderer;
     resmngr rmgr;
@@ -189,7 +190,8 @@ void engine_run(engine e)
         .updates_per_sec = 60,
         .userdata = e
     };
-    mainloop(&e->ml_params);
+    e->ml_perf_data = (mainloop_perf_data){};
+    mainloop(&e->ml_params, &e->ml_perf_data);
 }
 
 void engine_stop(engine e)
