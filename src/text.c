@@ -204,6 +204,12 @@ static vec4 add_text(tvertex* verts, uint16_t* indcs, texture_font* font, const 
         /* Skip non existing glyphs */
         if (!glyph)
             continue;
+        /* Newlines are special case */
+        if (text[i] == '\n') {
+            pen->x = 0;
+            pen->y -= font->height;
+            continue;
+        }
         /* Calculate glyph render triangles */
         float kerning = i > 0 ? texture_glyph_get_kerning(glyph, text + i - 1) : 0.0f;
         pen->x += kerning;
@@ -230,31 +236,37 @@ static vec4 add_text(tvertex* verts, uint16_t* indcs, texture_font* font, const 
         pen->x += glyph->advance_x;
         /* Calculate bounding total bounding box (bbox.{z,w} == {width,height}) */
         if (x0 < bbox.x) bbox.x = x0;
-        if (y1 < bbox.y) bbox.y = y1;
+        if (y0 > bbox.y) bbox.y = y0;
         if ((x1 - bbox.x) > bbox.z) bbox.z = x1 - bbox.x;
-        if ((y0 - bbox.y) > bbox.w) bbox.w = y0 - bbox.y;
+        if ((bbox.y - y1) > bbox.w) bbox.w = bbox.y - y1;
     }
     return bbox;
 }
 
 void text_draw(text_renderer tr, text_draw_desc* desc)
 {
-    /* Allocate and fill vertex and indice data buffers */
+    /* Alias to font handle */
+    texture_font* tf = desc->fnt->tfont;
+
+    /* Normalization factor to 12pt/1em */
+    const float emscale = 16.0 / tf->size;
+
+    /* Allocate vertex and indice data buffers */
     size_t num_chars = strlen(desc->text);
     size_t num_verts = 4 * num_chars;
     size_t num_indcs = 6 * num_chars;
     tvertex* verts   = calloc(num_verts, sizeof(*verts));
     uint16_t* indcs  = calloc(num_indcs, sizeof(*indcs));
-    vec2 pen = vec2_zero();
-    vec4 bbox = add_text(verts, indcs, desc->fnt->tfont, desc->text, &pen);
 
-    /* Normalize bbox to 12pt/1em */
-    const float emscale = 16.0 / 48.0;
+    /* Fill vertex and indice data buffers */
+    vec2 pen = vec2_new(0.0, 0.0);
+    vec4 bbox = add_text(verts, indcs, tf, desc->text, &pen);
+
+    /* Normalize bbox */
     bbox.x *= emscale; bbox.y *= emscale;
     bbox.z *= emscale; bbox.w *= emscale;
 
     /* Transform vertices */
-    texture_font* tf = desc->fnt->tfont;
     for (size_t i = 0; i < num_verts; ++i) {
         tvertex* vertex = &verts[i];
 
@@ -263,27 +275,28 @@ void text_draw(text_renderer tr, text_draw_desc* desc)
         vertex->pos.y *= emscale;
 
         /* Horizontal alignment */
+        vertex->pos.x -= bbox.x;
         switch (desc->halign) {
             case TEXT_HALIGN_LEFT:
                 break;
             case TEXT_HALIGN_CENTER:
-                vertex->pos.x -= (int)(bbox.x + bbox.z / 2.0f);
+                vertex->pos.x -= bbox.z / 2.0f;
                 break;
             case TEXT_HALIGN_RIGHT:
-                vertex->pos.x -= (int)(bbox.x + bbox.z);
+                vertex->pos.x -= bbox.z;
                 break;
         }
 
         /* Vertical alignment */
+        vertex->pos.y -= bbox.y;
         switch (desc->valign) {
             case TEXT_VALIGN_TOP:
-                vertex->pos.y -= (int)(bbox.y + bbox.w);
                 break;
             case TEXT_VALIGN_CENTER:
-                /* Uses baseline as reference */
+                vertex->pos.y += bbox.w / 2.0f;
                 break;
             case TEXT_VALIGN_BOTTOM:
-                vertex->pos.y += fabs(tf->descender * emscale);
+                vertex->pos.y += bbox.w;
                 break;
         }
 
