@@ -541,7 +541,7 @@ static rid resmngr_font_from_ttf(resmngr rm, load_params lparams)
         .mag_filter   = GFX_FILTER_LINEAR,
         .wrap_u       = GFX_WRAP_CLAMP_TO_EDGE,
         .wrap_v       = GFX_WRAP_CLAMP_TO_EDGE,
-        .pixel_format = GFX_PIXELFORMAT_L8,
+        .pixel_format = GFX_PIXELFORMAT_R8,
         .content.subimage[0][0] = {
             .ptr  = fnt->atlas->data,
             .size = atlas_sz * atlas_sz * 1

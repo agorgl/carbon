@@ -24,7 +24,8 @@ renderer renderer_create(renderer_params* params)
     assert(gfx_isvalid());
 
     /* Create render target images */
-    const int sample_count = gfx_query_feature(GFX_FEATURE_MSAA_RENDER_TARGETS) ? 4 : 1;
+    gfx_features features = gfx_query_features();
+    const int sample_count = features.msaa_render_targets ? 4 : 1;
     gfx_image_desc img_desc = {
         .render_target = 1,
         .width = params->width,
