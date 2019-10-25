@@ -414,6 +414,66 @@ static void path_join(char* path, const char* base, const char* uri)
     }
 }
 
+static gfx_image gfx_make_image_with_mipmaps(const gfx_image_desc* desc_)
+{
+    gfx_image_desc desc = *desc_;
+    assert(desc.pixel_format == GFX_PIXELFORMAT_RGBA8
+        || desc.pixel_format == GFX_PIXELFORMAT_BGRA8
+        || desc.pixel_format == GFX_PIXELFORMAT_R8);
+
+    unsigned int pixel_size = desc.pixel_format == GFX_PIXELFORMAT_R8 ? 1 : 4; /* TODO: gfx_pixelformat_bytesize(desc.pixel_format); */
+    unsigned char* buffers[GFX_CUBEFACE_NUM][GFX_MAX_MIPMAPS] = {}; /* TODO: Better allocation */
+
+    for (int cube_face = 0; cube_face < GFX_CUBEFACE_NUM; ++cube_face) {
+        unsigned int target_width = desc.width, target_height = desc.height;
+        for (int level = 1; level < GFX_MAX_MIPMAPS; ++level) {
+            unsigned img_size = target_width * target_height * pixel_size;
+            unsigned char* source = (unsigned char*)desc.content.subimage[cube_face][level - 1].ptr;
+            unsigned char* target = (unsigned char*)malloc(img_size);
+            buffers[cube_face][level] = target;
+            if (!source)
+                break;
+
+            unsigned int source_width = target_width;
+            target_width /= 2; target_height /= 2;
+            if (target_width < 1 && target_height < 1)
+                break;
+            if (target_width < 1)
+                target_width = 1;
+            if (target_height < 1)
+                target_height = 1;
+
+            for (unsigned int x = 0; x < target_width; ++x) {
+                for (unsigned int y = 0; y < target_height; ++y) {
+                    for (unsigned int channel = 0; channel < pixel_size; ++channel) {
+                        uint32_t color = 0;
+                        int sx = x * 2, sy = y * 2;
+                        color += source[source_width * pixel_size * sx + sy * pixel_size + channel];
+                        color += source[source_width * pixel_size * (sx + 1) + sy * pixel_size + channel];
+                        color += source[source_width * pixel_size * (sx + 1) + (sy + 1) * pixel_size + channel];
+                        color += source[source_width * pixel_size * sx + (sy + 1) * pixel_size + channel];
+                        color /= 4;
+                        target[target_width * pixel_size * x + y * pixel_size + channel] = (uint8_t)color;
+                    }
+                }
+            }
+
+            desc.content.subimage[cube_face][level].ptr = target;
+            desc.content.subimage[cube_face][level].size = img_size;
+            if (desc.num_mipmaps <= level)
+                desc.num_mipmaps = level + 1;
+        }
+    }
+
+    gfx_image img = gfx_make_image(&desc);
+    for (int cube_face = 0; cube_face < GFX_CUBEFACE_NUM; ++cube_face) {
+        for (int i = 0; i < GFX_MAX_MIPMAPS; ++i) {
+            free(buffers[cube_face][i]);
+        }
+    }
+    return img;
+}
+
 static int gltf_load_textures(renderer_scene* rs, const char* gltf_path, const cgltf_data* gltf)
 {
     assert(gltf->textures_count < RENDERER_SCENE_MAX_IMAGES);
