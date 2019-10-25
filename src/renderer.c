@@ -128,7 +128,7 @@ void renderer_frame(renderer r, renderer_inputs ri)
     gfx_begin_default_pass(&(gfx_pass_action){
         .colors[0] = {
             .action = GFX_ACTION_CLEAR,
-            .val = { 0.0f, 0.25f, 1.0f, 1.0f }
+            .val = { 0.0f, 0.0f, 0.0f, 1.0f }
         }
     }, r->params.width, r->params.height);
     gfx_apply_pipeline(r->default_pip);
