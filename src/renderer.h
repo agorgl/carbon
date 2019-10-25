@@ -123,9 +123,9 @@ typedef struct renderer_node {
 
 /* The complete scene */
 typedef struct renderer_scene {
-    sg_buffer          buffers[RENDERER_SCENE_MAX_BUFFERS];
-    sg_image           images[RENDERER_SCENE_MAX_IMAGES];
-    sg_pipeline        pipelines[RENDERER_SCENE_MAX_PIPELINES];
+    gfx_buffer         buffers[RENDERER_SCENE_MAX_BUFFERS];
+    gfx_image          images[RENDERER_SCENE_MAX_IMAGES];
+    gfx_pipeline       pipelines[RENDERER_SCENE_MAX_PIPELINES];
     renderer_material  materials[RENDERER_SCENE_MAX_MATERIALS];
     renderer_primitive primitives[RENDERER_SCENE_MAX_PRIMITIVES];
     renderer_mesh      meshes[RENDERER_SCENE_MAX_MESHES];

@@ -90,7 +90,7 @@ renderer renderer_create(renderer_params* params)
         },
         .rasterizer = {
             .cull_mode = GFX_CULLMODE_BACK,
-            .face_winding = SG_FACEWINDING_CCW,
+            .face_winding = GFX_FACEWINDING_CCW,
             .sample_count = sample_count
         }
     });
