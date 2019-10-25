@@ -169,12 +169,12 @@ text_renderer text_renderer_create()
     gfx_buffer vbuf = gfx_make_buffer(&(gfx_buffer_desc){
         .type = GFX_BUFFERTYPE_VERTEXBUFFER,
         .usage = GFX_USAGE_DYNAMIC,
-        .size = 4096,
+        .size = 8192,
     });
     gfx_buffer ibuf = gfx_make_buffer(&(gfx_buffer_desc){
         .type = GFX_BUFFERTYPE_INDEXBUFFER,
         .usage = GFX_USAGE_DYNAMIC,
-        .size = 4096,
+        .size = 8192,
     });
 
     text_renderer tr = calloc(1, sizeof(*tr));
