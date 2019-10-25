@@ -163,6 +163,38 @@ void engine_update(engine e, float dt)
     ecs_progress(e->world, dt);
 }
 
+static void engine_render_perf_info(engine e)
+{
+    /* Alias screen width and height */
+    const int width = e->params.width, height = e->params.height;
+
+    /* Construct perf text */
+    char perf_text[256];
+    float msec = e->ml_perf_data.total.average;
+    float updt = e->ml_perf_data.update.average;
+    float rndt = e->ml_perf_data.render.average;
+    snprintf(perf_text,
+             sizeof(perf_text),
+             "%.0f FPS %.2f|%.2f|%.2f (CPU|GPU|TOT)",
+             1000.0f / msec, updt, rndt, msec);
+
+    /* Render perf text */
+    float aspect_ratio = (float)width/height;
+    float padding = 0.01;
+    float tscl = 1.0;
+    text_draw(e->text_renderer, &(text_draw_desc){
+        .text       = perf_text,
+        .fnt        = resmngr_font_lookup(e->rmgr, e->font),
+        .pos        = {{-1.0 + padding, 1.0 - padding * aspect_ratio, 0.0}},
+        .rot        = quat_id(),
+        .scl        = {{tscl, tscl, tscl}},
+        .halign     = TEXT_HALIGN_LEFT,
+        .valign     = TEXT_VALIGN_TOP,
+        .scr_width  = width,
+        .scr_height = height,
+    });
+}
+
 void engine_render(engine e, float dt)
 {
     (void) dt;
@@ -176,6 +208,9 @@ void engine_render(engine e, float dt)
 
     /* Free intermediate renderer input data */
     ecs_free_render_inputs(e->world, &ri);
+
+    /* Render performance info */
+    engine_render_perf_info(e);
 
     /* Show backbuffer */
     window_swap_buffers(e->wnd);
