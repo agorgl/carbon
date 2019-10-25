@@ -123,6 +123,55 @@ typedef struct ecs_rows_t {
     ecs_entity_t interrupted_by; /* When set, system execution is interrupted */
 } ecs_rows_t;
 
+/** Types that describes a type filter.
+ * A type filter is used to match against zero or more types. For example,
+ * a type filter that includes component "Position" will match types 
+ * [Position], [Position, Velocity], [Position, Mass] etc. When no include
+ * filter is specified, all types will be matched.
+ *
+ * A filter can be narrowed down by specifying an exclude filter. For example,
+ * a filter which includes "Position" but excludes "Mass" will match types
+ * [Position] and [Position, Velocity], but not [Position, Mass].
+ *
+ * A type filter may contain multiple components. The filter kind determines
+ * how the filter is interpreted. When the kind is EcsMatchAll, all the
+ * components in the filter must be either included or excluded from the type
+ * being matched. If the kind is EcsMatchAny, any of the components should
+ * match with the type being matched.
+ *
+ * For example, a filter that includes {[Position, Velocity], EcsMatchAny} will
+ * match types [Position], [Position, Velocity] and [Velocity], but not [Mass].
+ * A filter that excludes {[Position, Velocity], EcsMatchAll} will not match 
+ * [Position, Velocity] or [Position, Velocity, Mass], but will match 
+ * [Position].
+ *
+ * If the kind is set to EcsMatchExact, the type needs to match the table type
+ * exactly. This applies to both the include and exclude types. For example, if
+ * the include type is {[Position, Velocity], EcsMatchExact}, only 
+ * [Position, Velocity] will be matched, and not, for example, 
+ * [Position, Velocity, Mass].
+ * 
+ * Similarly, if the exclude filter is set to {[Position, Velocity], 
+ * EcsMatchExact}, only [Position, Velocity] will be excluded from the matching
+ * set of types and not, for example [Position], or [Position, Velocity, Mass].
+ *
+ * When the kind is left to EcsMatchDefault, the include_kind will be set to
+ * EcsMatchAll, while the exclude_kind will be set to EcsMatchAny.
+ */
+typedef enum ecs_type_filter_kind_t {
+    EcsMatchDefault = 0,
+    EcsMatchAll,
+    EcsMatchAny,
+    EcsMatchExact
+} ecs_type_filter_kind_t;
+
+typedef struct ecs_type_filter_t {
+    ecs_type_t include;
+    ecs_type_t exclude;
+    ecs_type_filter_kind_t include_kind;
+    ecs_type_filter_kind_t exclude_kind;
+} ecs_type_filter_t;
+
 /** System action callback type */
 typedef void (*ecs_system_action_t)(
     ecs_rows_t *data);
@@ -833,27 +882,15 @@ void ecs_delete(
 /** Delete all entities containing a (set of) component(s). 
  * This operation provides a more efficient alternative to deleting entities one
  * by one by deleting an entire table or set of tables in a single operation.
- * The operation will clear all tables that have all of the components in the
- * provided to_delete type, while skipping tables that have any of the 
- * components in the provided except type.
- * 
- * For example, if to_delete is [Position, Velocity] and except is 
- * [Mass, Rotation], [Position, Velocity] will be deleted, but 
- * [Position, Velocity, Mass] and [Position, Velocity, Rotation] will not be
- * deleted.
+ * The operation will clear all tables that match the specified table.
  * 
  * @param world The world.
- * @param to_delete Tables with this set of components will be cleared.
- * @param except Tables with any of these components will not be cleared.
+ * @param filter Filter that matches zero or more tables.
  */
 FLECS_EXPORT
-void _ecs_delete_w_type(
+void ecs_delete_w_filter(
     ecs_world_t *world,
-    ecs_type_t to_delete,
-    ecs_type_t except);
-
-#define ecs_delete_w_type(world, to_delete, except)\
-    _ecs_delete_w_type(world, T##to_delete, T##except)
+    ecs_type_filter_t *filter);
 
 /** Add a type to an entity.
  * This operation will add one or more components (as per the specified type) to
@@ -993,6 +1030,35 @@ void ecs_disinherit(
     ecs_world_t *world,
     ecs_entity_t entity,
     ecs_entity_t base);
+
+/** Add/remove one or more components from a set of tables.
+ * This operation adds/removes one or more components from a set of tables 
+ * matching a filter. This operation is more efficient than calling ecs_add 
+ * or ecs_remove on the individual entities.
+ *
+ * If no filter is provided, the component(s) will be added/removed from all the
+ * tables in which it/they (not) occur(s).
+ *
+ * After this operation it is guaranteed that no tables matching the filter
+ * will have the components in to_remove, and similarly, all will have the
+ * components in to_add. If to_add or to_remove has multiple components
+ * and only one of the components occurs in a table, that component will be
+ * added/removed from the entities in the table.
+ *
+ * @param world The world.
+ * @param to_add The components to add.
+ * @param to_remove The components to remove.
+ * @param filter Filter that matches zero or more tables.
+ */
+FLECS_EXPORT
+void _ecs_add_remove_w_filter(
+    ecs_world_t *world,
+    ecs_type_t to_add,
+    ecs_type_t to_remove,
+    ecs_type_filter_t *filter);
+
+#define ecs_add_remove_w_filter(world, to_add, to_remove, filter)\
+    _ecs_add_remove_w_filter(world, ecs_type(to_add), ecs_type(to_remove), filter)
 
 /** Get pointer to component data.
  * This operation obtains a pointer to the component data of an entity. If the
@@ -1479,6 +1545,11 @@ char* ecs_type_to_expr(
     ecs_world_t *world,
     ecs_type_t type);
 
+FLECS_EXPORT
+bool ecs_type_match_w_filter(
+    ecs_world_t *world,
+    ecs_type_t type,
+    ecs_type_filter_t *filter);
 
 /* -- System API -- */
 

@@ -357,9 +357,11 @@ ecs_type_t ecs_notify_row_system(
     uint32_t limit)
 {
     ecs_entity_info_t info = {.entity = system};
+    ecs_world_t *real_world = world;
+    ecs_get_stage(&real_world);
 
     EcsRowSystem *system_data = ecs_get_ptr_intern(
-        world, &world->main_stage, &info, EEcsRowSystem, false, true);
+        real_world, &real_world->main_stage, &info, EEcsRowSystem, false, true);
     
     assert(system_data != NULL);
 
@@ -395,11 +397,12 @@ ecs_type_t ecs_notify_row_system(
                 /* If column is not found, it could come from a prefab. Look for
                  * components of components */
                 entity = ecs_get_entity_for_component(
-                    world, 0, table->type, buffer[i].is.component);
+                    real_world, 0, table->type, buffer[i].is.component);
 
                 ecs_assert(entity != 0 || 
                            buffer[i].oper_kind == EcsOperOptional, 
-                                ECS_INTERNAL_ERROR, ecs_get_id(world, buffer[i].is.component));
+                                ECS_INTERNAL_ERROR, 
+                                ecs_get_id(real_world, buffer[i].is.component));
             }
         }
 
@@ -422,7 +425,7 @@ ecs_type_t ecs_notify_row_system(
             references[ref_id] = (ecs_reference_t){
                 .entity = entity, 
                 .component = component,
-                .cached_ptr = ecs_get_ptr_intern(world, &world->main_stage, 
+                .cached_ptr = ecs_get_ptr_intern(real_world, &real_world->main_stage, 
                                 &info, component, false, true)
             };
 
@@ -643,10 +646,11 @@ void ecs_set_period(
 }
 
 static
-void* get_owned_column(
+void* get_owned_column_ptr(
     ecs_rows_t *rows,
     size_t size,
-    int32_t table_column)
+    int32_t table_column,
+    int32_t row)
 {
     ecs_assert(rows->table_columns != NULL, ECS_INTERNAL_ERROR, NULL);
     (void)size;
@@ -655,7 +659,7 @@ void* get_owned_column(
     ecs_assert(column->size != 0, ECS_COLUMN_HAS_NO_DATA, NULL);
     ecs_assert(!size || column->size == size, ECS_COLUMN_TYPE_MISMATCH, NULL);
     void *buffer = ecs_vector_first(column->data);
-    return ECS_OFFSET(buffer, column->size * rows->offset);
+    return ECS_OFFSET(buffer, column->size * (rows->offset + row));
 }
 
 static
@@ -721,7 +725,7 @@ void* get_column(
     if (table_column < 0) {
         return get_shared_column(rows, size, table_column);
     } else {
-        return ECS_OFFSET(get_owned_column(rows, size, table_column), size  * row);
+        return get_owned_column_ptr(rows, size, table_column, row);
     }
 }
 

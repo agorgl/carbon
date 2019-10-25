@@ -523,7 +523,6 @@ void EcsSetPrefab(ecs_rows_t *rows) {
     uint32_t i;
     for (i = 0; i < rows->count; i ++) {
         ecs_entity_t parent = prefab[i].parent;
-
         ecs_entity_t e = rows->entities[i];
         ecs_table_t *table = rows->table;
 
@@ -701,6 +700,12 @@ ecs_world_t *ecs_init(void) {
     ecs_new_system(world, "EcsInitPrefab", EcsOnAdd, "EcsPrefab", EcsInitPrefab);
     ecs_new_system(world, "EcsSetPrefab", EcsOnSet, "EcsPrefab", EcsSetPrefab);
 
+    /* Create type that allows for quickly checking if a type contains builtin
+     * components. */
+    world->t_builtins = ecs_expr_to_type(world,
+        "EcsComponent, EcsTypeComponent, EcsPrefab, EcsPrefabParent"
+        ", EcsPrefabBuilder, EcsRowSystem, EcsColSystem");
+
     return world;
 }
 
@@ -863,7 +868,7 @@ void _ecs_dim_type(
     if (type) {
         ecs_table_t *table = ecs_world_get_table(world, &world->main_stage, type);
         if (table) {
-            ecs_table_dim(table, entity_count);
+            ecs_table_dim(table, NULL, entity_count);
         }
     }
 }
@@ -1018,20 +1023,23 @@ void revalidate_system_refs(
 static
 void run_single_thread_stage(
     ecs_world_t *world,
-    ecs_vector_t *systems)
+    ecs_vector_t *systems,
+    bool staged)
 {
     uint32_t i, system_count = ecs_vector_count(systems);
 
     if (system_count) {
         ecs_entity_t *buffer = ecs_vector_first(systems);
 
-        world->in_progress = true;
+        if (staged) {
+            world->in_progress = true;
+        }
 
         for (i = 0; i < system_count; i ++) {
             ecs_run(world, buffer[i], world->delta_time, NULL);
         }
 
-        if (world->auto_merge) {
+        if (staged && world->auto_merge) {
             world->in_progress = false;
             ecs_merge(world);
             world->in_progress = true;
@@ -1154,8 +1162,8 @@ bool ecs_progress(
 
     /* -- System execution starts here -- */
 
-    run_single_thread_stage(world, world->on_load_systems);
-    run_single_thread_stage(world, world->post_load_systems);
+    run_single_thread_stage(world, world->on_load_systems, false);
+    run_single_thread_stage(world, world->post_load_systems, true);
 
     if (has_threads) {
         run_multi_thread_stage(world, world->pre_update_systems);
@@ -1163,14 +1171,14 @@ bool ecs_progress(
         run_multi_thread_stage(world, world->on_validate_systems);
         run_multi_thread_stage(world, world->post_update_systems);
     } else {
-        run_single_thread_stage(world, world->pre_update_systems);
-        run_single_thread_stage(world, world->on_update_systems);
-        run_single_thread_stage(world, world->on_validate_systems);
-        run_single_thread_stage(world, world->post_update_systems);
+        run_single_thread_stage(world, world->pre_update_systems, true);
+        run_single_thread_stage(world, world->on_update_systems, true);
+        run_single_thread_stage(world, world->on_validate_systems, true);
+        run_single_thread_stage(world, world->post_update_systems, true);
     }
 
-    run_single_thread_stage(world, world->pre_store_systems);
-    run_single_thread_stage(world, world->on_store_systems);
+    run_single_thread_stage(world, world->pre_store_systems, true);
+    run_single_thread_stage(world, world->on_store_systems, true);
 
     /* -- System execution stops here -- */
 

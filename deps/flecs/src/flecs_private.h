@@ -214,6 +214,7 @@ uint32_t ecs_table_grow(
 /* Dimension array to have n rows (doesn't add entities) */
 int16_t ecs_table_dim(
     ecs_table_t *table,
+    ecs_table_column_t *columns,
     uint32_t count);
 
 /* Return number of entities in table */
@@ -231,7 +232,9 @@ uint32_t ecs_table_rows_dimensioned(
 /* Delete row from table */
 void ecs_table_delete(
     ecs_world_t *world,
+    ecs_stage_t *stage,
     ecs_table_t *table,
+    ecs_table_column_t *columns,
     int32_t index);
 
 /* Get row from table (or stage) */
@@ -260,12 +263,18 @@ void ecs_table_clear(
     ecs_world_t *world,
     ecs_table_t *table);
 
+/* Merge data of one table into another table */
+void ecs_table_merge(
+    ecs_world_t *world,
+    ecs_table_t *new_table,
+    ecs_table_t *old_table);
+
 void ecs_table_swap(
     ecs_stage_t *stage,
     ecs_table_t *table,
     ecs_table_column_t *columns,
-    uint32_t row_1,
-    uint32_t row_2,
+    int32_t row_1,
+    int32_t row_2,
     ecs_row_t *row_ptr_1,
     ecs_row_t *row_ptr_2);
 
