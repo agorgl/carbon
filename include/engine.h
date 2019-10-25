@@ -36,7 +36,8 @@
 
 /* Engine initialization parameters */
 typedef struct engine_params {
-    /* TODO */
+    int width;
+    int height;
 } engine_params;
 
 /* Engine opaque type */

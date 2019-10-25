@@ -39,7 +39,11 @@ int main(int argc, char* argv[])
     carbon_setup();
 
     /* Create engine instance with given params */
-    engine engine = engine_create(&(engine_params){});
+    engine_params params = (engine_params){
+        .width  = 1280,
+        .height = 720,
+    };
+    engine engine = engine_create(&params);
 
     /* Fetch the world instance */
     ecs_world_t* world = engine_world(engine);

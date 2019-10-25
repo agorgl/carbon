@@ -13,6 +13,7 @@
 #define FONT_INTERNAL "fonts/noto_mono.ttf"
 
 struct engine {
+    engine_params params;
     mainloop_params ml_params;
     mainloop_perf_data ml_perf_data;
     window wnd;
@@ -50,15 +51,14 @@ static void on_mouse_button(struct window* wnd, int button, int action, int mods
 
 engine engine_create(const engine_params* params)
 {
-    (void) params;
     engine e = calloc(1, sizeof(*e));
-    const int width = 1280, height = 720;
+    e->params = *params;
 
     /* Create window */
     window wnd = window_create((window_params){
         .title  = "Carbon",
-        .width  = width,
-        .height = height,
+        .width  = params->width,
+        .height = params->height,
         .mode   = 0,
         .ctx_params = {
             .type    = OPENGL,
