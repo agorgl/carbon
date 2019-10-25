@@ -495,7 +495,7 @@ static int gltf_load_textures(renderer_scene* rs, const char* gltf_path, const c
             return 0;
 
         /* Upload data to GPU */
-        rs->images[rs->num_images++] = gfx_make_image(&(gfx_image_desc){
+        rs->images[rs->num_images++] = gfx_make_image_with_mipmaps(&(gfx_image_desc){
             .width        = width,
             .height       = height,
             .min_filter   = GFX_FILTER_LINEAR_MIPMAP_LINEAR,
@@ -594,7 +594,7 @@ static rid resmngr_font_from_ttf(resmngr rm, load_params lparams)
     texture_font_load_glyphs(fnt->tfont, cache);
 
     /* Create atlas image in GPU */
-    fnt->atlas_img = gfx_make_image(&(gfx_image_desc){
+    fnt->atlas_img = gfx_make_image_with_mipmaps(&(gfx_image_desc){
         .width        = atlas_sz,
         .height       = atlas_sz,
         .min_filter   = GFX_FILTER_LINEAR,
