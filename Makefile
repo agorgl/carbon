@@ -490,6 +490,8 @@ INCDIR_$(D)   := $$(addprefix $(INCFLAG), $$(INCPATHS_$(D)))
 LIBSDIR_$(D)  := $$(addprefix $(LIBSDIRFLAG), $$(LIBPATHS_$(D)))
 # Library flags
 LIBFLAGS_$(D) := $$(strip $$(foreach lib, $$(LIBS_$(D)), $(LIBFLAG)$$(lib)$(if $(filter $(TOOLCHAIN), MSVC),.lib,)))
+# More link flags
+MLDFLAGS_$(D) := $$(MLDFLAGS_$(D)) $$(foreach dep, $$(DEPS_$(D)), $$(MLDFLAGS_$$(dep)))
 # Extra link flags when building shared libraries
 ifeq ($$(PRJTYPE_$(D)), DynLib)
 	# Add shared library toggle
