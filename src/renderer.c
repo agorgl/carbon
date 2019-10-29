@@ -40,6 +40,11 @@ renderer renderer_create(renderer_params* params)
 
     /* Shader for the default pass */
     gfx_shader default_shd = gfx_make_shader(&(gfx_shader_desc){
+        .attrs = {
+            [0].name = "position",
+            [1].name = "normal",
+            [2].name = "uv0",
+        },
         .vs.uniform_blocks[0] = {
             .size = sizeof(params_t),
             .uniforms = {

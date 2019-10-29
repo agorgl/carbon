@@ -99,6 +99,10 @@ typedef struct text_renderer {
 text_renderer text_renderer_create()
 {
     gfx_shader shd = gfx_make_shader(&(gfx_shader_desc){
+        .attrs = {
+            [0].name = "vpos",
+            [1].name = "vtco",
+        },
         .vs.uniform_blocks[0] = {
             .size = sizeof(vs_params),
             .uniforms = {
