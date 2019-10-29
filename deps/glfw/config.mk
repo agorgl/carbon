@@ -68,3 +68,7 @@ ifeq ($(TARGET_OS), Windows)
 else ifeq ($(TARGET_OS), Linux)
 	LIBS += GL GLU X11 Xrandr Xinerama Xcursor pthread dl
 endif
+
+ifeq ($(TARGET_OS), Darwin)
+	MLDFLAGS += -framework Cocoa -framework IOKit -framework CoreFoundation -framework CoreVideo
+endif
