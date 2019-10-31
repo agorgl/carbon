@@ -94,4 +94,14 @@ void* tss_get(tss_t key);
 int tss_set(tss_t key, void* val);
 void tss_delete(tss_t key);
 
+#define ONCE_FLAG_INIT PTHREAD_ONCE_INIT
+#ifdef INIT_ONCE_STATIC_INIT
+#define TSS_DTOR_ITERATIONS PTHREAD_DESTRUCTOR_ITERATIONS
+#else
+#define TSS_DTOR_ITERATIONS 1  /* assume TSS dtor MAY be called at least once */
+#endif
+
+/* FIXME: temporary non-standard hack to ease transition */
+#define _MTX_INITIALIZER_NP PTHREAD_MUTEX_INITIALIZER
+
 #endif /* ! _THREADS_H_ */

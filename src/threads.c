@@ -11,16 +11,6 @@
 #define EMULATED_THREADS_USE_NATIVE_TIMEDLOCK
 #endif
 
-#define ONCE_FLAG_INIT PTHREAD_ONCE_INIT
-#ifdef INIT_ONCE_STATIC_INIT
-#define TSS_DTOR_ITERATIONS PTHREAD_DESTRUCTOR_ITERATIONS
-#else
-#define TSS_DTOR_ITERATIONS 1  /* assume TSS dtor MAY be called at least once */
-#endif
-
-/* FIXME: temporary non-standard hack to ease transition */
-#define _MTX_INITIALIZER_NP PTHREAD_MUTEX_INITIALIZER
-
 /*
  * Implementation limits:
  *   - Conditionally emulation for "mutex with timeout"
