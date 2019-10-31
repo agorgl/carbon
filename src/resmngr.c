@@ -414,23 +414,19 @@ static void path_join(char* path, const char* base, const char* uri)
     }
 }
 
-static gfx_image gfx_make_image_with_mipmaps(const gfx_image_desc* desc_)
+static void image_mipmaps_populate(gfx_image_desc* desc)
 {
-    gfx_image_desc desc = *desc_;
-    assert(desc.pixel_format == GFX_PIXELFORMAT_RGBA8
-        || desc.pixel_format == GFX_PIXELFORMAT_BGRA8
-        || desc.pixel_format == GFX_PIXELFORMAT_R8);
+    assert(desc->pixel_format == GFX_PIXELFORMAT_RGBA8
+        || desc->pixel_format == GFX_PIXELFORMAT_BGRA8
+        || desc->pixel_format == GFX_PIXELFORMAT_R8);
 
-    unsigned int pixel_size = desc.pixel_format == GFX_PIXELFORMAT_R8 ? 1 : 4; /* TODO: gfx_pixelformat_bytesize(desc.pixel_format); */
-    unsigned char* buffers[GFX_CUBEFACE_NUM][GFX_MAX_MIPMAPS] = {}; /* TODO: Better allocation */
-
+    unsigned int pixel_size = desc->pixel_format == GFX_PIXELFORMAT_R8 ? 1 : 4; /* TODO: gfx_pixelformat_bytesize(desc.pixel_format); */
     for (int cube_face = 0; cube_face < GFX_CUBEFACE_NUM; ++cube_face) {
-        unsigned int target_width = desc.width, target_height = desc.height;
+        unsigned int target_width = desc->width, target_height = desc->height;
         for (int level = 1; level < GFX_MAX_MIPMAPS; ++level) {
             unsigned img_size = target_width * target_height * pixel_size;
-            unsigned char* source = (unsigned char*)desc.content.subimage[cube_face][level - 1].ptr;
+            unsigned char* source = (unsigned char*)desc->content.subimage[cube_face][level - 1].ptr;
             unsigned char* target = (unsigned char*)malloc(img_size);
-            buffers[cube_face][level] = target;
             if (!source)
                 break;
 
@@ -458,20 +454,22 @@ static gfx_image gfx_make_image_with_mipmaps(const gfx_image_desc* desc_)
                 }
             }
 
-            desc.content.subimage[cube_face][level].ptr = target;
-            desc.content.subimage[cube_face][level].size = img_size;
-            if (desc.num_mipmaps <= level)
-                desc.num_mipmaps = level + 1;
+            desc->content.subimage[cube_face][level].ptr = target;
+            desc->content.subimage[cube_face][level].size = img_size;
+            if (desc->num_mipmaps <= level)
+                desc->num_mipmaps = level + 1;
         }
     }
+}
 
-    gfx_image img = gfx_make_image(&desc);
+static void image_mipmaps_free(gfx_image_desc* desc)
+{
     for (int cube_face = 0; cube_face < GFX_CUBEFACE_NUM; ++cube_face) {
-        for (int i = 0; i < GFX_MAX_MIPMAPS; ++i) {
-            free(buffers[cube_face][i]);
+        for (int i = 1; i < GFX_MAX_MIPMAPS; ++i) {
+            gfx_subimage_content* sic = &desc->content.subimage[cube_face][i];
+            free((void*)sic->ptr);
         }
     }
-    return img;
 }
 
 static int gltf_load_textures(renderer_scene* rs, const char* gltf_path, const cgltf_data* gltf)
@@ -495,7 +493,7 @@ static int gltf_load_textures(renderer_scene* rs, const char* gltf_path, const c
             return 0;
 
         /* Upload data to GPU */
-        rs->images[rs->num_images++] = gfx_make_image_with_mipmaps(&(gfx_image_desc){
+        gfx_image_desc im_desc = (gfx_image_desc){
             .width        = width,
             .height       = height,
             .min_filter   = GFX_FILTER_LINEAR_MIPMAP_LINEAR,
@@ -505,9 +503,12 @@ static int gltf_load_textures(renderer_scene* rs, const char* gltf_path, const c
                 .ptr = pixels,
                 .size = width * height * channels
             }
-        });
+        };
+        image_mipmaps_populate(&im_desc);
+        rs->images[rs->num_images++] = gfx_make_image(&im_desc);
 
         /* Free texture data from host memory */
+        image_mipmaps_free(&im_desc);
         free(pixels);
     }
     return 1;
@@ -594,7 +595,7 @@ static rid resmngr_font_from_ttf(resmngr rm, load_params lparams)
     texture_font_load_glyphs(fnt->tfont, cache);
 
     /* Create atlas image in GPU */
-    fnt->atlas_img = gfx_make_image_with_mipmaps(&(gfx_image_desc){
+    gfx_image_desc im_desc = (gfx_image_desc){
         .width        = atlas_sz,
         .height       = atlas_sz,
         .min_filter   = GFX_FILTER_LINEAR,
@@ -606,7 +607,10 @@ static rid resmngr_font_from_ttf(resmngr rm, load_params lparams)
             .ptr  = fnt->atlas->data,
             .size = atlas_sz * atlas_sz * 1
         }
-    });
+    };
+    image_mipmaps_populate(&im_desc);
+    fnt->atlas_img = gfx_make_image(&im_desc);
+    image_mipmaps_free(&im_desc);
 
     return r;
 }
