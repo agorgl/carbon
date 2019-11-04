@@ -31,15 +31,11 @@
 #ifndef _LIST_H_
 #define _LIST_H_
 
+#include <stdbool.h>
+
 /* Data type macros */
 #ifndef NULL
 #define NULL 0
-#endif
-
-#ifndef __cplusplus
-#define bool char
-#define true 1;
-#define false 0;
 #endif
 
 /* Thread safety macros */
