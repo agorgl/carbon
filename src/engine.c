@@ -153,6 +153,9 @@ static void camera_control_update(engine e, float dt)
 
 void engine_update(engine e, float dt)
 {
+    /* Process pending loading operations */
+    resmngr_process(e->rmgr);
+
     /* Update camera */
     camera_control_update(e, dt);
 

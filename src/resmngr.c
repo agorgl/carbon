@@ -6,10 +6,18 @@
 #include "cgltf.h"
 #include "stb_image.h"
 #include "text.h"
+#include "list.h"
+#include "threads.h"
+#include "thread_pool.h"
+
+#define RES_TYPE_TEXTURE 1
 
 typedef struct resmngr {
     struct slot_map scene_map;
     struct slot_map font_map;
+    struct list_head loaded_queue;
+    mtx_t loaded_queue_mtx;
+    threadpool_t* worker_pool;
 }* resmngr;
 
 typedef struct load_params {
@@ -26,11 +34,25 @@ typedef struct load_params {
     } type;
 } load_params;
 
+typedef struct loaded_data {
+    int type;
+    void* data;
+    struct list_head list;
+}* loaded_data;
+
+typedef struct loaded_data_texture {
+    gfx_image im;
+    gfx_image_desc* im_desc;
+}* loaded_data_texture;
+
 resmngr resmngr_create()
 {
     resmngr rm = calloc(1, sizeof(*rm));
     slot_map_init(&rm->scene_map, sizeof(renderer_scene));
     slot_map_init(&rm->font_map, sizeof(font));
+    mtx_init(&rm->loaded_queue_mtx, mtx_plain);
+    rm->worker_pool = threadpool_create(8, THREAD_POOL_MAX_QUEUE);
+    INIT_LIST_HEAD(&rm->loaded_queue);
     return rm;
 }
 
@@ -39,8 +61,49 @@ int resmngr_handle_valid(rid r)
     return slot_map_key_valid(r);
 }
 
+static void resmngr_loaded_queue_put(resmngr rm, loaded_data ldata)
+{
+    mtx_lock(&rm->loaded_queue_mtx);
+    list_add(&ldata->list, &rm->loaded_queue);
+    mtx_unlock(&rm->loaded_queue_mtx);
+}
+
+static loaded_data resmngr_loaded_queue_get(resmngr rm)
+{
+    mtx_lock(&rm->loaded_queue_mtx);
+    loaded_data ldata = list_first_entry_or_null(&rm->loaded_queue, struct loaded_data, list);
+    if (ldata) {
+        list_del(&ldata->list);
+    }
+    mtx_unlock(&rm->loaded_queue_mtx);
+    return ldata;
+}
+
+static void upload_image_resource(gfx_image im, gfx_image_desc* desc);
+
+void resmngr_process(resmngr rm)
+{
+    /* Fetch next loaded resource */
+    loaded_data ldata = resmngr_loaded_queue_get(rm);
+    if (ldata) {
+        switch (ldata->type) {
+            case RES_TYPE_TEXTURE: {
+                loaded_data_texture tdata = ldata->data;
+                upload_image_resource(tdata->im, tdata->im_desc);
+                break;
+            }
+            default:
+                break;
+        }
+        free(ldata->data);
+        free(ldata);
+    }
+}
+
 void resmngr_destroy(resmngr rm)
 {
+    threadpool_destroy(rm->worker_pool, 0);
+    mtx_destroy(&rm->loaded_queue_mtx);
     for (size_t i = 0; i < rm->scene_map.size; ++i) {
         rid r = slot_map_data_to_key(&rm->scene_map, i);
         resmngr_model_delete(rm, r);
@@ -472,7 +535,75 @@ static void image_mipmaps_free(gfx_image_desc* desc)
     }
 }
 
-static int gltf_load_textures(renderer_scene* rs, const char* gltf_path, const cgltf_data* gltf)
+typedef struct {
+    resmngr rm;
+    gfx_image im;
+    const char* path;
+} imgres_thrd_data;
+
+static void image_resource_load(void* data)
+{
+    imgres_thrd_data* td = data;
+    resmngr rm           = td->rm;
+    gfx_image im         = td->im;
+    const char* path     = td->path;
+
+    /* Load and decode texture data */
+    int width, height, channels;
+    void* pixels = stbi_load(path, &width, &height, &channels, 4);
+    free((void*)path);
+    if (!pixels)
+        goto cleanup;
+
+    /* Create description */
+    gfx_image_desc* im_desc = calloc(1, sizeof(*im_desc));
+    *im_desc = (gfx_image_desc){
+        .width        = width,
+        .height       = height,
+        .min_filter   = GFX_FILTER_LINEAR_MIPMAP_LINEAR,
+        .mag_filter   = GFX_FILTER_LINEAR,
+        .pixel_format = GFX_PIXELFORMAT_RGBA8,
+        .content.subimage[0][0] = {
+            .ptr = pixels,
+            .size = width * height * channels
+        }
+    };
+
+    /* Populate mipmaps */
+    image_mipmaps_populate(im_desc);
+
+    /* Push to loaded queue */
+    loaded_data_texture tdata = calloc(1, sizeof(*tdata));
+    *tdata = (struct loaded_data_texture) {
+        .im_desc = im_desc,
+        .im      = im,
+    };
+    loaded_data ldata = calloc(1, sizeof(*ldata));
+    *ldata = (struct loaded_data) {
+        .type = RES_TYPE_TEXTURE,
+        .data = tdata,
+    };
+    resmngr_loaded_queue_put(rm, ldata);
+
+cleanup:
+    free(td);
+}
+
+static void upload_image_resource(gfx_image im, gfx_image_desc* desc)
+{
+    /* Upload image */
+    gfx_init_image(im, desc);
+
+    /* Free texture data from host memory */
+    image_mipmaps_free(desc);
+    for (int cube_face = 0; cube_face < GFX_CUBEFACE_NUM; ++cube_face) {
+        gfx_subimage_content* sic = &desc->content.subimage[cube_face][0];
+        free((void*)sic->ptr);
+    }
+    free(desc);
+}
+
+static int gltf_load_textures(renderer_scene* rs, const char* gltf_path, const cgltf_data* gltf, resmngr rm)
 {
     assert(gltf->textures_count < RENDERER_SCENE_MAX_IMAGES);
     for (size_t i = 0; i < gltf->textures_count; ++i) {
@@ -485,31 +616,18 @@ static int gltf_load_textures(renderer_scene* rs, const char* gltf_path, const c
         char* path = calloc(1, strlen(gltf_path) + strlen(gltf_img->uri) + 1);
         path_join(path, gltf_path, gltf_img->uri);
 
-        /* Load texture data */
-        int width, height, channels;
-        void* pixels = stbi_load(path, &width, &height, &channels, 4);
-        free(path);
-        if (!pixels)
-            return 0;
+        /* Allocate image handle */
+        gfx_image im = gfx_alloc_image();
+        rs->images[rs->num_images++] = im;
 
-        /* Upload data to GPU */
-        gfx_image_desc im_desc = (gfx_image_desc){
-            .width        = width,
-            .height       = height,
-            .min_filter   = GFX_FILTER_LINEAR_MIPMAP_LINEAR,
-            .mag_filter   = GFX_FILTER_LINEAR,
-            .pixel_format = GFX_PIXELFORMAT_RGBA8,
-            .content.subimage[0][0] = {
-                .ptr = pixels,
-                .size = width * height * channels
-            }
-        };
-        image_mipmaps_populate(&im_desc);
-        rs->images[rs->num_images++] = gfx_make_image(&im_desc);
+        /* Prepare thread data */
+        imgres_thrd_data* tdata = calloc(1, sizeof(*tdata));
+        tdata->rm   = rm;
+        tdata->im   = im;
+        tdata->path = path;
 
-        /* Free texture data from host memory */
-        image_mipmaps_free(&im_desc);
-        free(pixels);
+        /* Launch loader thread */
+        threadpool_add(rm->worker_pool, image_resource_load, tdata);
     }
     return 1;
 }
@@ -536,7 +654,7 @@ rid resmngr_model_from_gltf(resmngr rm, const char* fpath)
     gltf_parse_nodes(rs, data);
     gltf_parse_materials(rs, data);
 
-    if (!gltf_load_textures(rs, fpath, data))
+    if (!gltf_load_textures(rs, fpath, data, rm))
         return RID_INVALID;
 
     cgltf_free(data);

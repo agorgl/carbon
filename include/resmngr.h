@@ -44,6 +44,7 @@ typedef sm_key rid;
 /* Main interface */
 resmngr resmngr_create();
 int resmngr_handle_valid(rid r);
+void resmngr_process(resmngr rm);
 void resmngr_destroy(resmngr rm);
 
 /* Model resources */
