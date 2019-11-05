@@ -10,11 +10,16 @@ typedef struct renderer {
     gfx_image depth_img;
     gfx_shader default_shd;
     gfx_pipeline default_pip;
+    gfx_image fallback_tex;
 }* renderer;
 
 typedef struct {
     mat4 mvp;
-} params_t;
+} vs_params_t;
+
+typedef struct {
+    float textured;
+} fs_params_t;
 
 renderer renderer_create(renderer_params* params)
 {
@@ -46,13 +51,28 @@ renderer renderer_create(renderer_params* params)
             [2].name = "uv0",
         },
         .vs.uniform_blocks[0] = {
-            .size = sizeof(params_t),
+            .size = sizeof(vs_params_t),
             .uniforms = {
                 [0] = {
                     .name = "mvp",
                     .type = GFX_UNIFORMTYPE_MAT4
                 }
             }
+        },
+        .fs.uniform_blocks[0] = {
+            .size = sizeof(fs_params_t),
+            .uniforms = {
+                [0] = {
+                    .name = "textured",
+                    .type = GFX_UNIFORMTYPE_FLOAT,
+                }
+            }
+        },
+        .fs.images = {
+            [0] = {
+                .name = "tex",
+                .type = GFX_IMAGETYPE_2D
+            },
         },
         .vs.source =
             "#version 330\n"
@@ -72,8 +92,11 @@ renderer renderer_create(renderer_params* params)
             "out vec4 fcolor;\n"
             "in vec3 color;\n"
             "in vec2 uv;\n"
+            "uniform float textured;\n"
+            "uniform sampler2D tex;\n"
             "void main() {\n"
-            "  fcolor = vec4(color, 1.0);\n"
+            "  vec3 c = mix(color, texture(tex, uv).rgb, textured);\n"
+            "  fcolor = vec4(c, 1.0);\n"
             "}\n"
     });
 
@@ -100,12 +123,23 @@ renderer renderer_create(renderer_params* params)
         }
     });
 
+    /* Fallback textures */
+    gfx_image fallback_tex = gfx_make_image(&(gfx_image_desc){
+        .width = 1,
+        .height = 1,
+        .content.subimage[0][0] = {
+            .ptr = (unsigned char[]){255, 0, 255},
+            .size = 4,
+        }
+    });
+
     renderer r = calloc(1, sizeof(*r));
     r->params         = *params;
     r->color_img      = color_img;
     r->depth_img      = depth_img;
     r->default_shd    = default_shd;
     r->default_pip    = default_pip;
+    r->fallback_tex   = fallback_tex;
     return r;
 }
 
@@ -130,7 +164,7 @@ void renderer_frame(renderer r, renderer_inputs ri)
      * Default pass
      */
 
-    /* Pass action for default pass, clearing to blue-ish */
+    /* Pass action for default pass, clearing to black */
     gfx_begin_default_pass(&(gfx_pass_action){
         .colors[0] = {
             .action = GFX_ACTION_CLEAR,
@@ -143,16 +177,33 @@ void renderer_frame(renderer r, renderer_inputs ri)
         renderer_mesh* rm = &rs->meshes[rn->mesh];
         mat4 modl = mat4_mul_mat4(rn->transform, model);
         for (size_t j = 0; j < rm->num_primitives; ++j) {
-            /* Resource bindings for the default pass */
+            /* Fetch geometry bindings */
             renderer_primitive* rp = &rs->primitives[rm->first_primitive + j];
             gfx_buffer vbuf = rs->buffers[rp->vertex_buffer];
             gfx_buffer ibuf = rs->buffers[rp->index_buffer];
+            /* Fetch material bindings */
+            int textured = 0;
+            gfx_image img = r->fallback_tex;
+            if (rp->material != RENDERER_SCENE_INVALID_INDEX) {
+                renderer_material* rm = &rs->materials[rp->material];
+                size_t color_tex_idx = rm->data.metallic.images.base_color;
+                if (color_tex_idx != RENDERER_SCENE_INVALID_INDEX) {
+                    img = rs->images[color_tex_idx];
+                    textured = 1;
+                }
+            }
+            /* Apply the fetched bindings */
             gfx_apply_bindings(&(gfx_bindings){
                 .vertex_buffers[0] = vbuf,
                 .index_buffer      = ibuf,
+                .fs_images[0]      = img,
             });
-            params_t vs_params = {.mvp = mat4_mul_mat4(view_proj, modl)};
+            /* Apply vertex and fragment shader uniforms */
+            vs_params_t vs_params = {.mvp = mat4_mul_mat4(view_proj, modl)};
+            fs_params_t fs_params = {.textured = textured};
             gfx_apply_uniforms(GFX_SHADERSTAGE_VS, 0, &vs_params, sizeof(vs_params));
+            gfx_apply_uniforms(GFX_SHADERSTAGE_FS, 0, &fs_params, sizeof(fs_params));
+            /* Perform the draw call */
             gfx_draw(rp->base_element, rp->num_elements, 1);
         }
     }
