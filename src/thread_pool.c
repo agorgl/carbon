@@ -1,6 +1,5 @@
 #include "thread_pool.h"
-#include <stdlib.h>
-#include <threads.h>
+#include "threads.h"
 
 typedef enum {
     IMMEDIATE_SHUTDOWN = 1,
