@@ -185,7 +185,8 @@ rid resmngr_model_sample(resmngr rm)
                 .vertex_buffer = 0,
                 .index_buffer = 1,
                 .base_element = 0,
-                .num_elements = sizeof(indices) / sizeof(indices[0])
+                .num_elements = sizeof(indices) / sizeof(indices[0]),
+                .material = RENDERER_SCENE_INVALID_INDEX,
             }
         },
         .meshes = {
