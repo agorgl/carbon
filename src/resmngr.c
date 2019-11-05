@@ -489,7 +489,6 @@ static void image_mipmaps_populate(gfx_image_desc* desc)
         for (int level = 1; level < GFX_MAX_MIPMAPS; ++level) {
             unsigned img_size = target_width * target_height * pixel_size;
             unsigned char* source = (unsigned char*)desc->content.subimage[cube_face][level - 1].ptr;
-            unsigned char* target = (unsigned char*)malloc(img_size);
             if (!source)
                 break;
 
@@ -497,6 +496,8 @@ static void image_mipmaps_populate(gfx_image_desc* desc)
             target_width /= 2; target_height /= 2;
             if (target_width < 1 && target_height < 1)
                 break;
+
+            unsigned char* target = (unsigned char*)malloc(img_size);
             if (target_width < 1)
                 target_width = 1;
             if (target_height < 1)
@@ -595,11 +596,11 @@ static void upload_image_resource(gfx_image im, gfx_image_desc* desc)
     gfx_init_image(im, desc);
 
     /* Free texture data from host memory */
-    image_mipmaps_free(desc);
     for (int cube_face = 0; cube_face < GFX_CUBEFACE_NUM; ++cube_face) {
         gfx_subimage_content* sic = &desc->content.subimage[cube_face][0];
         free((void*)sic->ptr);
     }
+    image_mipmaps_free(desc);
     free(desc);
 }
 
