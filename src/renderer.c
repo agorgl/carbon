@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include "linmath.h"
 #include "gfx.h"
+#include "shaders.h"
 
 typedef struct renderer {
     renderer_params params;
@@ -43,6 +44,10 @@ renderer renderer_create(renderer_params* params)
     img_desc.pixel_format = GFX_PIXELFORMAT_DEPTH;
     gfx_image depth_img = gfx_make_image(&img_desc);
 
+    /* Load shader sources */
+    shader_desc static_vs = shader_fetch("static.vs");
+    shader_desc direct_fs = shader_fetch("direct.fs");
+
     /* Shader for the default pass */
     gfx_shader default_shd = gfx_make_shader(&(gfx_shader_desc){
         .attrs = {
@@ -74,31 +79,13 @@ renderer renderer_create(renderer_params* params)
                 .type = GFX_IMAGETYPE_2D
             },
         },
-        .vs.source =
-            "#version 330\n"
-            "in vec3 position;\n"
-            "in vec3 normal;\n"
-            "in vec2 uv0;\n"
-            "uniform mat4 mvp;\n"
-            "out vec3 color;\n"
-            "out vec2 uv;\n"
-            "void main() {\n"
-            "  color = position;\n"
-            "  uv = uv0;\n"
-            "  gl_Position = mvp * vec4(position, 1.0);\n"
-            "}\n",
-        .fs.source =
-            "#version 330\n"
-            "out vec4 fcolor;\n"
-            "in vec3 color;\n"
-            "in vec2 uv;\n"
-            "uniform float textured;\n"
-            "uniform sampler2D tex;\n"
-            "void main() {\n"
-            "  vec3 c = mix(color, texture(tex, uv).rgb, textured);\n"
-            "  fcolor = vec4(c, 1.0);\n"
-            "}\n"
+        .vs.source = static_vs->source,
+        .fs.source = direct_fs->source,
     });
+
+    /* Free shader sources */
+    shader_free(static_vs);
+    shader_free(direct_fs);
 
     /* Pipeline object for the default pass */
     gfx_pipeline default_pip = gfx_make_pipeline(&(gfx_pipeline_desc){
