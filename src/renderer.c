@@ -146,19 +146,11 @@ renderer renderer_create(renderer_params* params)
 void renderer_frame(renderer r, renderer_inputs ri)
 {
     renderer_scene* rs = &ri.scene;
-    static float rx = 0.0f, ry = 0.0f;
 
     /* View-projection matrix */
     mat4 proj = mat4_perspective(radians(60.0f), 0.01f, 1000.0f, (float)r->params.width/(float)r->params.height);
     mat4 view = ri.view;
     mat4 view_proj = mat4_mul_mat4(proj, view);
-
-    /* Prepare the uniform block with the model-view-projection matrix,
-     * we just use the same matrix for the offscreen- and default-pass */
-    ry += 1.0f;
-    mat4 model = mat4_mul_mat4(
-        mat4_rotation_x(radians(rx)),
-        mat4_rotation_y(radians(ry)));
 
     /*
      * Default pass
@@ -175,7 +167,6 @@ void renderer_frame(renderer r, renderer_inputs ri)
     for (size_t i = 0; i < rs->num_nodes; ++i) {
         renderer_node* rn = &rs->nodes[i];
         renderer_mesh* rm = &rs->meshes[rn->mesh];
-        mat4 modl = mat4_mul_mat4(rn->transform, model);
         for (size_t j = 0; j < rm->num_primitives; ++j) {
             /* Fetch geometry bindings */
             renderer_primitive* rp = &rs->primitives[rm->first_primitive + j];
@@ -199,7 +190,7 @@ void renderer_frame(renderer r, renderer_inputs ri)
                 .fs_images[0]      = img,
             });
             /* Apply vertex and fragment shader uniforms */
-            vs_params_t vs_params = {.mvp = mat4_mul_mat4(view_proj, modl)};
+            vs_params_t vs_params = {.mvp = mat4_mul_mat4(view_proj, rn->transform)};
             fs_params_t fs_params = {.textured = textured};
             gfx_apply_uniforms(GFX_SHADERSTAGE_VS, 0, &vs_params, sizeof(vs_params));
             gfx_apply_uniforms(GFX_SHADERSTAGE_FS, 0, &fs_params, sizeof(fs_params));
