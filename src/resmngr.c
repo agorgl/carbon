@@ -5,6 +5,7 @@
 #include "renderer.h"
 #include "cgltf.h"
 #include "stb_image.h"
+#include "mikktspace.h"
 #include "text.h"
 #include "list.h"
 #include "threads.h"
@@ -210,6 +211,75 @@ rid resmngr_model_sample(resmngr rm)
     return r;
 }
 
+typedef struct mikktspace_userdata {
+    void* vdata;
+    size_t vsize;
+    uint32_t* idata;
+    size_t icount;
+} mikktspace_userdata;
+
+static int mikktspace_num_faces(const SMikkTSpaceContext* ctx)
+{
+    mikktspace_userdata* ud = ctx->m_pUserData;
+    return ud->icount / 3;
+}
+
+static int mikktspace_num_face_vertices(const SMikkTSpaceContext* ctx, const int face)
+{
+    (void) ctx; (void) face;
+    return 3;
+}
+
+static void mikktspace_position(const SMikkTSpaceContext* ctx, float out_pos[3], const int face, const int vert)
+{
+    mikktspace_userdata* ud = ctx->m_pUserData;
+    uint32_t vidx = ud->idata[face * 3 + vert];
+    void* vbase = ud->vdata + vidx * ud->vsize;
+    memcpy(out_pos, vbase + (0) * sizeof(float), 3 * sizeof(float));
+}
+
+static void mikktspace_normal(const SMikkTSpaceContext* ctx, float out_nrm[3], const int face, const int vert)
+{
+    mikktspace_userdata* ud = ctx->m_pUserData;
+    uint32_t vidx = ud->idata[face * 3 + vert];
+    void* vbase = ud->vdata + vidx * ud->vsize;
+    memcpy(out_nrm, vbase + (3) * sizeof(float), 3 * sizeof(float));
+}
+
+static void mikktspace_texcoord(const SMikkTSpaceContext* ctx, float out_tco[2], const int face, const int vert)
+{
+    mikktspace_userdata* ud = ctx->m_pUserData;
+    uint32_t vidx = ud->idata[face * 3 + vert];
+    void* vbase = ud->vdata + vidx * ud->vsize;
+    memcpy(out_tco, vbase + (3 + 3) * sizeof(float), 2 * sizeof(float));
+}
+
+static void mikktspace_set_tspace(const SMikkTSpaceContext* ctx, const float tng[3], const float sign, const int face, const int vert)
+{
+    mikktspace_userdata* ud = ctx->m_pUserData;
+    uint32_t vidx = ud->idata[face * 3 + vert];
+    void* vbase = ud->vdata + vidx * ud->vsize;
+    float* tgt_tng = vbase + (3 + 3 + 2) * sizeof(float);
+    memcpy(tgt_tng, tng, 3 * sizeof(float));
+    tgt_tng[3] = sign;
+}
+
+static void gltf_generate_tangents(void* vdata, size_t vsize, uint32_t* idata, size_t icount)
+{
+    mikktspace_userdata ud = { .vdata = vdata, .vsize = vsize, .idata = idata, .icount = icount };
+    genTangSpaceDefault(&(SMikkTSpaceContext){
+        .m_pInterface = &(SMikkTSpaceInterface) {
+            .m_getNumFaces          = mikktspace_num_faces,
+            .m_getNumVerticesOfFace = mikktspace_num_face_vertices,
+            .m_getPosition          = mikktspace_position,
+            .m_getNormal            = mikktspace_normal,
+            .m_getTexCoord          = mikktspace_texcoord,
+            .m_setTSpaceBasic       = mikktspace_set_tspace,
+        },
+        .m_pUserData = &ud,
+    });
+}
+
 static void gltf_parse_meshes(renderer_scene* rs, const cgltf_data* gltf)
 {
     assert(gltf->meshes_count < RENDERER_SCENE_MAX_MESHES);
@@ -266,6 +336,7 @@ static void gltf_parse_meshes(renderer_scene* rs, const cgltf_data* gltf)
             assert(nverts != 0);
 
             /* Copy vertex data for current primitive */
+            int has_tangents = 0;
             for (size_t k = 0; k < gltf_prim->attributes_count; ++k) {
                 cgltf_attribute* gltf_attr = &gltf_prim->attributes[k];
                 cgltf_accessor*  gltf_accs = gltf_attr->data;
@@ -336,6 +407,10 @@ static void gltf_parse_meshes(renderer_scene* rs, const cgltf_data* gltf)
                 }
                 idata[ioffs + k] = voffs + idx;
             }
+
+            /* Generate tangents if needed */
+            if (!has_tangents)
+                gltf_generate_tangents(vdata, vsize, idata + ioffs, gltf_prim->indices->count);
 
             /* Increase offsets by number of vertices/indices */
             voffs += nverts;
