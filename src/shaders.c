@@ -61,24 +61,29 @@ static const char* shader_load(const char* name)
     memcpy(buf, file_data, file_sz);
 
     /* Find includes */
-    for (size_t i = 0; i < file_sz; ++i) {
-        /* Current line ptr */
+    for (size_t i = 0; i < buf_sz; ++i) {
+        /* Current line, end of line ptrs and line size */
         const char* lin = &buf[i];
-        /* Find eol */
-        const char* eol = memchr(lin, '\n', file_sz - i);
+        const char* eol = memchr(lin, '\n', buf_sz - i);
+        size_t line_sz  = eol - lin;
+
         /* Check if include directive */
         if (strncmp(SHADERS_INCD, lin, strlen(SHADERS_INCD)) == 0) {
             /* Skip directive and space */
             const char* p = lin;
             p = memchr(p, ' ', eol - p);
             p = next_non_space(p, eol - p);
-            /* Parse name */
+
+            /* Find directive name boundaries */
             const char* name_start = memchr(p, '<', eol - p);
             const char* name_end = memchr(p, '>', eol - p);
+
+            /* If valid include directive */
             if (name_start && name_end && name_end > (name_start + 1)) {
                 /* Copy over name */
                 char* name = calloc(1, name_end - (name_start + 1) + 1);
                 memcpy(name, name_start + 1, name_end - (name_start + 1));
+
                 /* Load included file */
                 const char* incdata = shader_load(name);
                 if (!incdata) {
@@ -87,10 +92,13 @@ static const char* shader_load(const char* name)
                     goto err;
                 }
                 free(name);
+
                 /* Allocate new buffer */
                 size_t incdata_sz = strlen(incdata);
-                buf_sz += incdata_sz - (eol - lin);
+                size_t added_size = incdata_sz - (eol - lin);
+                buf_sz += added_size;
                 void* nbuf = calloc(1, buf_sz + 1);
+
                 /* Populate new buffer with included data */
                 strncat(nbuf, buf, lin - buf);
                 strncat(nbuf, incdata, incdata_sz);
@@ -98,10 +106,14 @@ static const char* shader_load(const char* name)
                 free((void*)incdata);
                 free(buf);
                 buf = nbuf;
+
+                /* Progress current position */
+                i += added_size;
             }
         }
+
         /* Skip to next line */
-        i = eol - buf;
+        i += line_sz;
     }
     return buf;
 
