@@ -77,7 +77,7 @@ static const char* shader_load(const char* name)
             const char* name_end = memchr(p, '>', eol - p);
             if (name_start && name_end && name_end > (name_start + 1)) {
                 /* Copy over name */
-                char* name = calloc(1, name_end - (name_start + 1));
+                char* name = calloc(1, name_end - (name_start + 1) + 1);
                 memcpy(name, name_start + 1, name_end - (name_start + 1));
                 /* Load included file */
                 const char* incdata = shader_load(name);
@@ -90,7 +90,7 @@ static const char* shader_load(const char* name)
                 /* Allocate new buffer */
                 size_t incdata_sz = strlen(incdata);
                 buf_sz += incdata_sz - (eol - lin);
-                void* nbuf = calloc(1, buf_sz);
+                void* nbuf = calloc(1, buf_sz + 1);
                 /* Populate new buffer with included data */
                 strncat(nbuf, buf, lin - buf);
                 strncat(nbuf, incdata, incdata_sz);
