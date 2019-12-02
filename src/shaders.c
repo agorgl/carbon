@@ -22,11 +22,11 @@ static void path_join(char* path, const char* base, const char* uri)
     }
 }
 
-static const char* shader_path_from_name(const char* name)
+static const char* shader_path_from_name(const char* name, const char* parent)
 {
-    size_t path_len = strlen(SHADERS_PATH) + 1 + strlen(name) + strlen(SHADERS_EXTN);
+    size_t path_len = strlen(parent) + 1 + strlen(name) + strlen(SHADERS_EXTN);
     char* path = calloc(1, path_len + 1);
-    path_join(path, SHADERS_PATH, name);
+    path_join(path, parent, name);
     strncat(path, SHADERS_EXTN, path_len);
     return path;
 }
@@ -43,21 +43,24 @@ static void* next_non_space(const void* s, size_t n)
     return 0;
 }
 
-static const char* shader_load(const char* name)
+static const char* shader_load(const char* name, const char* parent)
 {
+    /* Buffer to be returned */
+    char* buf = 0;
+    size_t buf_sz = 0;
+
     /* Construct path from name */
-    const char* path = shader_path_from_name(name);
+    const char* path = shader_path_from_name(name, parent);
 
     /* Load main shader file */
     char* file_data = 0; size_t file_sz = 0;
     embedded_file((void**)&file_data, &file_sz, path);
-    free((void*)path);
     if (!file_data)
-        return 0;
+        goto cleanup;
 
     /* Copy over to intermediate buffer */
-    char* buf = calloc(1, file_sz + 1);
-    size_t buf_sz = file_sz;
+    buf = calloc(1, file_sz + 1);
+    buf_sz = file_sz;
     memcpy(buf, file_data, file_sz);
 
     /* Find includes */
@@ -84,8 +87,15 @@ static const char* shader_load(const char* name)
                 char* name = calloc(1, name_end - (name_start + 1) + 1);
                 memcpy(name, name_start + 1, name_end - (name_start + 1));
 
+                /* Construct parent path */
+                char* parpath = strdup(path);
+                char* parpath_dirname = strrchr(parpath, '/') + 1;
+                if (parpath_dirname)
+                    *parpath_dirname = 0;
+
                 /* Load included file */
-                const char* incdata = shader_load(name);
+                const char* incdata = shader_load(name, parpath);
+                free(parpath);
                 if (!incdata) {
                     fprintf(stderr, "Could not load shader \"%s\"\n", name);
                     free(name);
@@ -115,6 +125,8 @@ static const char* shader_load(const char* name)
         /* Skip to next line */
         i += line_sz;
     }
+cleanup:
+    free((void*)path);
     return buf;
 
 err:
@@ -125,8 +137,8 @@ err:
 shader_desc shader_fetch(const char* name)
 {
     shader_desc desc = calloc(1, sizeof(*desc));
-    desc->path = shader_path_from_name(name);
-    desc->source = shader_load(name);
+    desc->path       = shader_path_from_name(name, SHADERS_PATH);
+    desc->source     = shader_load(name, SHADERS_PATH);
     return desc;
 }
 
