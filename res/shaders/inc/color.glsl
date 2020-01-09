@@ -4,10 +4,7 @@
 #ifndef _COLOR_GLSL_
 #define _COLOR_GLSL_
 
-// Define saturation macro, if not already user-defined
-#ifndef saturate
-#define saturate(v) clamp(v, 0, 1)
-#endif
+#include <math>
 
 // Constants
 const float HCV_EPSILON = 1e-10;
