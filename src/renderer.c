@@ -21,8 +21,12 @@ typedef struct {
 } vs_params_t;
 
 typedef struct {
-    float has_base_color;
+    vec3 view_pos;
+    vec4 bcolor_val;
+    vec2 mtlrgn_val;
+    float has_bcolor_map;
     float has_normal_map;
+    float has_mtlrgn_map;
 } fs_params_t;
 
 renderer renderer_create(renderer_params* params)
@@ -80,22 +84,42 @@ renderer renderer_create(renderer_params* params)
             .size = sizeof(fs_params_t),
             .uniforms = {
                 [0] = {
-                    .name = "has_base_color",
-                    .type = GFX_UNIFORMTYPE_FLOAT,
+                    .name = "view_pos",
+                    .type = GFX_UNIFORMTYPE_FLOAT3,
                 },
                 [1] = {
+                    .name = "bcolor_val",
+                    .type = GFX_UNIFORMTYPE_FLOAT4,
+                },
+                [2] = {
+                    .name = "mtlrgn_val",
+                    .type = GFX_UNIFORMTYPE_FLOAT2,
+                },
+                [3] = {
+                    .name = "has_bcolor_map",
+                    .type = GFX_UNIFORMTYPE_FLOAT,
+                },
+                [4] = {
                     .name = "has_normal_map",
                     .type = GFX_UNIFORMTYPE_FLOAT,
-                }
+                },
+                [5] = {
+                    .name = "has_mtlrgn_map",
+                    .type = GFX_UNIFORMTYPE_FLOAT,
+                },
             }
         },
         .fs.images = {
             [0] = {
-                .name = "base_color",
+                .name = "bcolor_map",
                 .type = GFX_IMAGETYPE_2D
             },
             [1] = {
                 .name = "normal_map",
+                .type = GFX_IMAGETYPE_2D
+            },
+            [2] = {
+                .name = "mtlrgn_map",
                 .type = GFX_IMAGETYPE_2D
             },
         },
@@ -151,6 +175,13 @@ renderer renderer_create(renderer_params* params)
     return r;
 }
 
+static vec3 vpos_from_matrix(mat4 view)
+{
+    mat4 inverse_view = mat4_inverse(view);
+    vec3 view_pos = vec3_new(inverse_view.xw, inverse_view.yw, inverse_view.zw);
+    return view_pos;
+}
+
 void renderer_frame(renderer r, renderer_inputs ri)
 {
     renderer_scene* rs = &ri.scene;
@@ -158,6 +189,7 @@ void renderer_frame(renderer r, renderer_inputs ri)
     /* View-projection matrix */
     mat4 proj = mat4_perspective(radians(60.0f), 0.01f, 1000.0f, (float)r->params.width/(float)r->params.height);
     mat4 view = ri.view;
+    vec3 vpos = vpos_from_matrix(view);
 
     /*
      * Default pass
@@ -179,21 +211,33 @@ void renderer_frame(renderer r, renderer_inputs ri)
             renderer_primitive* rp = &rs->primitives[rm->first_primitive + j];
             gfx_buffer vbuf = rs->buffers[rp->vertex_buffer];
             gfx_buffer ibuf = rs->buffers[rp->index_buffer];
-            /* Fetch material bindings */
-            int has_base_color = 0, has_normal_map = 0;
-            gfx_image base_color_img = r->fallback_tex;
+            /* Default values */
+            vec4 bcolor_val = vec4_one();
+            vec2 mtlrgn_val = vec2_zero();
+            gfx_image bcolor_map_img = r->fallback_tex;
             gfx_image normal_map_img = r->fallback_tex;
+            gfx_image mtlrgn_map_img = r->fallback_tex;
+            int has_bcolor_map = 0, has_normal_map = 0, has_mtlrgn_map = 0;
+            /* Fetch material bindings */
             if (rp->material != RENDERER_SCENE_INVALID_INDEX) {
                 renderer_material* rm = &rs->materials[rp->material];
+                bcolor_val = rm->data.metallic.params.base_color_factor;
+                mtlrgn_val.x = rm->data.metallic.params.metallic_factor;
+                mtlrgn_val.y = rm->data.metallic.params.roughness_factor;
                 size_t color_tex_idx = rm->data.metallic.images.base_color;
                 if (color_tex_idx != RENDERER_SCENE_INVALID_INDEX) {
-                    base_color_img = rs->images[color_tex_idx];
-                    has_base_color = 1;
+                    bcolor_map_img = rs->images[color_tex_idx];
+                    has_bcolor_map = 1;
                 }
                 size_t normal_tex_idx = rm->data.metallic.images.normal;
                 if (normal_tex_idx != RENDERER_SCENE_INVALID_INDEX) {
                     normal_map_img = rs->images[normal_tex_idx];
                     has_normal_map = 1;
+                }
+                size_t metal_roughness_tex_idx = rm->data.metallic.images.metallic_roughness;
+                if (metal_roughness_tex_idx != RENDERER_SCENE_INVALID_INDEX) {
+                    mtlrgn_map_img = rs->images[metal_roughness_tex_idx];
+                    has_mtlrgn_map = 1;
                 }
             }
             /* Apply the fetched bindings */
@@ -201,8 +245,9 @@ void renderer_frame(renderer r, renderer_inputs ri)
                 .vertex_buffers[0] = vbuf,
                 .index_buffer      = ibuf,
                 .fs_images = {
-                    [0] = base_color_img,
+                    [0] = bcolor_map_img,
                     [1] = normal_map_img,
+                    [2] = mtlrgn_map_img,
                 }
             });
             /* Apply vertex and fragment shader uniforms */
@@ -212,8 +257,12 @@ void renderer_frame(renderer r, renderer_inputs ri)
                 .proj = proj,
             };
             fs_params_t fs_params = {
-                .has_base_color = has_base_color,
-                .has_normal_map = has_normal_map
+                .view_pos       = vpos,
+                .bcolor_val     = bcolor_val,
+                .mtlrgn_val     = mtlrgn_val,
+                .has_bcolor_map = has_bcolor_map,
+                .has_normal_map = has_normal_map,
+                .has_mtlrgn_map = has_mtlrgn_map,
             };
             gfx_apply_uniforms(GFX_SHADERSTAGE_VS, 0, &vs_params, sizeof(vs_params));
             gfx_apply_uniforms(GFX_SHADERSTAGE_FS, 0, &fs_params, sizeof(fs_params));
