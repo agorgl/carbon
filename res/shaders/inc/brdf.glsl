@@ -1,6 +1,8 @@
 //
 // brdf.glsl
 //
+#ifndef _BRDF_GLSL_
+#define _BRDF_GLSL_
 
 #include <math>
 
@@ -143,3 +145,5 @@ float diffuse(float roughness, float NoV, float NoL, float LoH)
     return fd_burley(roughness, NoV, NoL, LoH);
 #endif
 }
+
+#endif

@@ -1,6 +1,8 @@
 //
 // math.glsl
 //
+#ifndef _MATH_GLSL_
+#define _MATH_GLSL_
 
 //------------------------------------------------------------------------------
 // Constants
@@ -36,3 +38,5 @@ float max3(const vec3 v)
 {
     return max(v.x, max(v.y, v.z));
 }
+
+#endif

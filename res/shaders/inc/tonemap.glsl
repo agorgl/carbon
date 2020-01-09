@@ -1,6 +1,8 @@
 //
 // tonemap.glsl
 //
+#ifndef _TONEMAP_GLSL_
+#define _TONEMAP_GLSL_
 
 #include <common>
 #include <math>
@@ -221,3 +223,5 @@ vec3 tonemap_reinhard_weighted_invert(const vec3 x)
     // with the weighted Reinhard tone-mapping operator
     return x / (1.0 - max3(x));
 }
+
+#endif

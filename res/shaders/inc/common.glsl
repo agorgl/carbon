@@ -1,6 +1,8 @@
 //
 // common.glsl
 //
+#ifndef _COMMON_GLSL_
+#define _COMMON_GLSL_
 
 //------------------------------------------------------------------------------
 // Common color operations
@@ -43,3 +45,5 @@ vec3 heatmap(float v)
     vec3 r = v * 2.1 - vec3(1.8, 1.14, 0.3);
     return 1.0 - r * r;
 }
+
+#endif
