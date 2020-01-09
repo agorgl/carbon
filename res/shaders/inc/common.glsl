@@ -5,17 +5,8 @@
 #define _COMMON_GLSL_
 
 //------------------------------------------------------------------------------
-// Common color operations
+// Common computation operations
 //------------------------------------------------------------------------------
-/**
- * Computes the luminance of the specified linear RGB color using the
- * luminance coefficients from Rec. 709.
- */
-float luminance(const vec3 linear)
-{
-    return dot(linear, vec3(0.2126, 0.7152, 0.0722));
-}
-
 /**
  * Computes the pre-exposed intensity using the specified intensity and exposure.
  * This function exists to force highp precision on the two parameters

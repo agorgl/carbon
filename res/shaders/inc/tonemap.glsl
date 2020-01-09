@@ -4,8 +4,8 @@
 #ifndef _TONEMAP_GLSL_
 #define _TONEMAP_GLSL_
 
-#include <common>
 #include <math>
+#include <color>
 
 //------------------------------------------------------------------------------
 // Tone-mapping configuration
