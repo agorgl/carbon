@@ -5,6 +5,11 @@ static bool ecs_os_api_debug_enabled = false;
 
 ecs_os_api_t ecs_os_api;
 
+uint64_t ecs_os_api_malloc_count = 0;
+uint64_t ecs_os_api_realloc_count = 0;
+uint64_t ecs_os_api_calloc_count = 0;
+uint64_t ecs_os_api_free_count = 0;
+
 void ecs_os_set_api(
     ecs_os_api_t *os_api)
 {
@@ -227,6 +232,52 @@ void ecs_os_gettime(ecs_time_t *timeOut)
     timeOut->nanosec = now - timeOut->sec * 1000000000;
 }
 
+static
+void* ecs_os_api_malloc(size_t size) {
+    ecs_os_api_malloc_count ++;
+    ecs_assert(size != 0, ECS_INVALID_PARAMETER, NULL);
+    return malloc(size);
+}
+
+static
+void* ecs_os_api_calloc(size_t num, size_t size) {
+    ecs_os_api_calloc_count ++;
+    ecs_assert(size != 0, ECS_INVALID_PARAMETER, NULL);
+    ecs_assert(num != 0, ECS_INVALID_PARAMETER, NULL);
+    return calloc(num, size);
+}
+
+static
+void* ecs_os_api_realloc(void *ptr, size_t size) {
+    ecs_assert(size != 0, ECS_INVALID_PARAMETER, NULL);
+
+    if (ptr) {
+        ecs_os_api_realloc_count ++;
+    } else {
+        /* If not actually reallocing, treat as malloc */
+        ecs_os_api_malloc_count ++; 
+    }
+    
+    return realloc(ptr, size);
+}
+
+static
+void ecs_os_api_free(void *ptr) {
+    if (ptr) {
+        ecs_os_api_free_count ++;
+    }
+    free(ptr);
+}
+
+static
+char* ecs_os_api_strdup(const char *str) {
+    int len = strlen(str);
+    char *result = ecs_os_api_malloc(len + 1);
+    ecs_assert(result != NULL, ECS_OUT_OF_MEMORY, NULL);
+    strcpy(result, str);
+    return result;
+}
+
 void ecs_os_set_api_defaults(void)
 {
     /* Don't overwrite if already initialized */
@@ -236,10 +287,11 @@ void ecs_os_set_api_defaults(void)
 
     ecs_os_time_setup();
     
-    ecs_os_api.malloc = malloc;
-    ecs_os_api.free = free;
-    ecs_os_api.realloc = realloc;
-    ecs_os_api.calloc = calloc;
+    ecs_os_api.malloc = ecs_os_api_malloc;
+    ecs_os_api.free = ecs_os_api_free;
+    ecs_os_api.realloc = ecs_os_api_realloc;
+    ecs_os_api.calloc = ecs_os_api_calloc;
+    ecs_os_api.strdup = ecs_os_api_strdup;
 
 #ifdef __BAKE__
     ecs_os_api.thread_new = bake_thread_new;

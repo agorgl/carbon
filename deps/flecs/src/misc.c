@@ -1,7 +1,6 @@
 #include "flecs_private.h"
 
 /** Convert time to double */
-static
 double ecs_time_to_double(
     ecs_time_t t)
 {
@@ -10,7 +9,6 @@ double ecs_time_to_double(
     return result + (double)t.nanosec / (double)1000000000;;
 }
 
-static
 ecs_time_t ecs_time_sub(
     ecs_time_t t1,
     ecs_time_t t2)
@@ -47,6 +45,13 @@ double ecs_time_measure(
     stop = ecs_time_sub(stop, *start);
     *start = temp;
     return ecs_time_to_double(stop);
+}
+
+void* ecs_os_memdup(const void *src, size_t size) {
+    void *dst = ecs_os_malloc(size);
+    ecs_assert(dst != NULL, ECS_OUT_OF_MEMORY, NULL);
+    memcpy(dst, src, size);  
+    return dst;  
 }
 
 /*

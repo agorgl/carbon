@@ -18,6 +18,10 @@ const ecs_vector_params_t builder_params = {
     .element_size = sizeof(ecs_builder_op_t)
 };
 
+const ecs_vector_params_t ptr_params = {
+    .element_size = sizeof(void*)
+};
+
 /* -- Global variables -- */
 
 ecs_type_t TEcsComponent;
@@ -30,6 +34,7 @@ ecs_type_t TEcsColSystem;
 ecs_type_t TEcsId;
 ecs_type_t TEcsHidden;
 ecs_type_t TEcsDisabled;
+ecs_type_t TEcsOnDemand;
 
 const char *ECS_COMPONENT_ID =      "EcsComponent";
 const char *ECS_TYPE_COMPONENT_ID = "EcsTypeComponent";
@@ -41,6 +46,7 @@ const char *ECS_COL_SYSTEM_ID =     "EcsColSystem";
 const char *ECS_ID_ID =             "EcsId";
 const char *ECS_HIDDEN_ID =         "EcsHidden";
 const char *ECS_DISABLED_ID =       "EcsDisabled";
+const char *ECS_ON_DEMAND_ID =      "EcsOnDemand";
 
 /** Comparator function for handles */
 static
@@ -91,6 +97,7 @@ void bootstrap_types(
     TEcsId = ecs_type_find_intern(world, stage, &(ecs_entity_t){EEcsId}, 1);
     TEcsHidden = ecs_type_find_intern(world, stage, &(ecs_entity_t){EEcsHidden}, 1);
     TEcsDisabled = ecs_type_find_intern(world, stage, &(ecs_entity_t){EEcsDisabled}, 1);
+    TEcsOnDemand = ecs_type_find_intern(world, stage, &(ecs_entity_t){EEcsOnDemand}, 1);
 
     world->t_component = ecs_type_merge_intern(world, stage, TEcsComponent, TEcsId, 0);
     world->t_type = ecs_type_merge_intern(world, stage, TEcsTypeComponent, TEcsId, 0);
@@ -119,15 +126,15 @@ ecs_table_t* bootstrap_component_table(
     result->type = world->t_component;
     result->frame_systems = NULL;
     result->flags = 0;
+    result->flags |= EcsTableHasBuiltins;
     result->columns = ecs_os_malloc(sizeof(ecs_table_column_t) * 3);
-    
     ecs_assert(result->columns != NULL, ECS_OUT_OF_MEMORY, NULL);
 
-    result->columns[0].data = ecs_vector_new(&handle_arr_params, 12);
+    result->columns[0].data = ecs_vector_new(&handle_arr_params, 16);
     result->columns[0].size = sizeof(ecs_entity_t);
-    result->columns[1].data = ecs_vector_new(&handle_arr_params, 12);
+    result->columns[1].data = ecs_vector_new(&handle_arr_params, 16);
     result->columns[1].size = sizeof(EcsComponent);
-    result->columns[2].data = ecs_vector_new(&handle_arr_params, 12);
+    result->columns[2].data = ecs_vector_new(&handle_arr_params, 16);
     result->columns[2].size = sizeof(EcsId);
 
     set_table(stage, world->t_component, result);
@@ -187,8 +194,8 @@ void ecs_notify_systems_of_table(
     notify_create_table(world, world->on_store_systems, table);
     notify_create_table(world, world->on_validate_systems, table);
     notify_create_table(world, world->on_update_systems, table);
+    notify_create_table(world, world->manual_systems, table);
     notify_create_table(world, world->inactive_systems, table);
-    notify_create_table(world, world->on_demand_systems, table);
 }
 
 /** Create a new table and register it with the world and systems. A table in
@@ -201,6 +208,7 @@ ecs_table_t* create_table(
 {
     /* Add and initialize table */
     ecs_table_t *result = ecs_chunked_add(stage->tables, ecs_table_t);
+    ecs_assert(result != NULL, ECS_INTERNAL_ERROR, NULL);
     
     result->type = type;
 
@@ -215,8 +223,6 @@ ecs_table_t* create_table(
     if (stage == &world->main_stage && !world->is_merging) {
         ecs_notify_systems_of_table(world, result);
     }
-
-    assert(result != NULL);
 
     return result;
 }
@@ -296,7 +302,7 @@ ecs_vector_t** ecs_system_array(
     } else if (kind == EcsOnStore) {
         return &world->on_store_systems;
     } else if (kind == EcsManual) {
-        return &world->on_demand_systems;        
+        return &world->manual_systems;        
     }
     
     return NULL;
@@ -336,21 +342,31 @@ void ecs_world_activate_system(
     }
 
     if (i == count) {
-        return; /* System is disabled */
+        return; /* System is already in the right array */
     }
 
     ecs_vector_move_index(
         &dst_array, src_array, &handle_arr_params, i);
 
+    ecs_entity_t *to_sort;
+    uint32_t sort_count;
+
     if (active) {
          *ecs_system_array(world, kind) = dst_array;
-         qsort(dst_array, ecs_vector_count(dst_array) + 1,
-          sizeof(ecs_entity_t), compare_handle);
+         to_sort = ecs_vector_first(dst_array);
+         sort_count = ecs_vector_count(dst_array);
     } else {
         world->inactive_systems = dst_array;
-        qsort(src_array, ecs_vector_count(src_array) + 1,
-          sizeof(ecs_entity_t), compare_handle);
-    }
+        to_sort = ecs_vector_first(src_array);
+        sort_count = ecs_vector_count(src_array);        
+    } 
+
+    qsort(to_sort, sort_count, sizeof(ecs_entity_t), compare_handle);    
+
+    /* Signal that system has been either activated or deactivated */
+    ecs_system_activate(world, system, active);
+
+    return;
 }
 
 ecs_stage_t *ecs_get_stage(
@@ -379,6 +395,29 @@ ecs_stage_t *ecs_get_stage(
 }
 
 static
+void col_systems_deinit_handlers(
+    ecs_world_t *world,
+    ecs_vector_t *systems)
+{
+    uint32_t i, count = ecs_vector_count(systems);
+    ecs_entity_t *buffer = ecs_vector_first(systems);
+
+    for (i = 0; i < count; i ++) {
+        EcsColSystem *ptr = ecs_get_ptr(world, buffer[i], EcsColSystem);
+
+        /* Invoke Deactivated action for active systems */
+        if (ecs_vector_count(ptr->tables)) {
+            ecs_invoke_status_action(world, buffer[i], ptr, EcsSystemDeactivated);
+        }
+
+        /* Invoke Disabled action for enabled systems */
+        if (ptr->base.enabled) {
+            ecs_invoke_status_action(world, buffer[i], ptr, EcsSystemDisabled);
+        }    
+    }
+}
+
+static
 void col_systems_deinit(
     ecs_world_t *world,
     ecs_vector_t *systems)
@@ -388,6 +427,9 @@ void col_systems_deinit(
 
     for (i = 0; i < count; i ++) {
         EcsColSystem *ptr = ecs_get_ptr(world, buffer[i], EcsColSystem);
+
+        ecs_os_free(ptr->base.signature);
+
         ecs_vector_free(ptr->base.columns);
         ecs_vector_free(ptr->jobs);
 
@@ -419,6 +461,7 @@ void row_systems_deinit(
 
     for (i = 0; i < count; i ++) {
         EcsRowSystem *ptr = ecs_get_ptr(world, buffer[i], EcsRowSystem);
+        ecs_os_free(ptr->base.signature);
         ecs_vector_free(ptr->base.columns);
         ecs_vector_free(ptr->components);
     }
@@ -482,6 +525,8 @@ void add_prefab_child_to_builder(
     ecs_type_t type = NULL;
     if (ecs_has(world, child, EcsTypeComponent)) {
         type = ecs_type_from_entity(world, child); 
+
+        ecs_assert(type != NULL, ECS_INVALID_PARAMETER, NULL);
 
         ecs_entity_t *array = ecs_vector_first(type);
         (void)array;
@@ -590,6 +635,8 @@ ecs_world_t *ecs_init(void) {
     ecs_assert(ecs_os_api.realloc != NULL, ECS_MISSING_OS_API, "realloc");
     ecs_assert(ecs_os_api.calloc != NULL, ECS_MISSING_OS_API, "calloc");
 
+    bool time_ok = true;
+
 #ifndef NDEBUG
     bool thr_ok = true;
     if (!ecs_os_api.mutex_new) {thr_ok = false; no_threading("mutex_new");}
@@ -607,7 +654,6 @@ ecs_world_t *ecs_init(void) {
         ecs_os_dbg("threading available");
     }
 
-    bool time_ok = true;
     if (!ecs_os_api.get_time) {time_ok = false; no_time("get_time");}
     if (!ecs_os_api.sleep) {time_ok = false; no_time("sleep");}
     if (time_ok) {
@@ -629,7 +675,7 @@ ecs_world_t *ecs_init(void) {
     world->pre_store_systems = ecs_vector_new( &handle_arr_params, 0);
     world->on_store_systems = ecs_vector_new( &handle_arr_params, 0);
     world->inactive_systems = ecs_vector_new(&handle_arr_params, 0);
-    world->on_demand_systems = ecs_vector_new(&handle_arr_params, 0);
+    world->manual_systems = ecs_vector_new(&handle_arr_params, 0);
 
     world->add_systems = ecs_vector_new(&handle_arr_params, 0);
     world->remove_systems = ecs_vector_new(&handle_arr_params, 0);
@@ -641,6 +687,8 @@ ecs_world_t *ecs_init(void) {
     world->type_sys_set_index = ecs_map_new(0, sizeof(ecs_vector_t*));
     world->type_handles = ecs_map_new(0, sizeof(ecs_entity_t));
     world->prefab_parent_index = ecs_map_new(0, sizeof(ecs_entity_t));
+    world->on_activate_components = ecs_map_new(0, sizeof(ecs_on_demand_in_t));
+    world->on_enable_components = ecs_map_new(0, sizeof(ecs_on_demand_in_t));
 
     world->worker_stages = NULL;
     world->worker_threads = NULL;
@@ -657,14 +705,18 @@ ecs_world_t *ecs_init(void) {
     world->should_quit = false;
     world->should_match = false;
 
-    world->frame_start = (ecs_time_t){0, 0};
-    world->frame_time = 0;
-    world->world_time = 0;
-    world->merge_time = 0;
-    world->system_time = 0;
+    world->frame_start_time = (ecs_time_t){0, 0};
+    if (time_ok) {
+        ecs_os_get_time(&world->world_start_time);
+    }
     world->target_fps = 0;
     world->fps_sleep = 0;
-    world->tick = 0;
+
+    world->frame_time_total = 0;
+    world->system_time_total = 0;
+    world->merge_time_total = 0;
+    world->frame_count_total = 0;
+    world->world_time_total = 0;
 
     world->context = NULL;
 
@@ -674,7 +726,7 @@ ecs_world_t *ecs_init(void) {
     ecs_stage_init(world, &world->main_stage);
     ecs_stage_init(world, &world->temp_stage);
 
-    /* Initialize families for builtin types */
+    /* Initialize types for builtin types */
     bootstrap_types(world);
 
     /* Create table that will hold components (EcsComponent, EcsId) */
@@ -692,8 +744,9 @@ ecs_world_t *ecs_init(void) {
     bootstrap_component(world, table, EEcsId, ECS_ID_ID, sizeof(EcsId));
     bootstrap_component(world, table, EEcsHidden, ECS_HIDDEN_ID, 0);
     bootstrap_component(world, table, EEcsDisabled, ECS_DISABLED_ID, 0);
+    bootstrap_component(world, table, EEcsOnDemand, ECS_ON_DEMAND_ID, 0);
 
-    world->last_handle = EEcsDisabled + 1;
+    world->last_handle = EcsWorld + 1;
     world->min_handle = 0;
     world->max_handle = 0;
 
@@ -705,6 +758,9 @@ ecs_world_t *ecs_init(void) {
     world->t_builtins = ecs_expr_to_type(world,
         "EcsComponent, EcsTypeComponent, EcsPrefab, EcsPrefabParent"
         ", EcsPrefabBuilder, EcsRowSystem, EcsColSystem");
+
+    /* Initialize EcsWorld */
+    ecs_set(world, EcsWorld, EcsId, {"EcsWorld"});
 
     return world;
 }
@@ -746,6 +802,7 @@ ecs_world_t* ecs_init_w_args(
     }
 
     ecs_world_t *world = ecs_init();
+    ecs_assert(world != NULL, ECS_INTERNAL_ERROR, NULL);
 
     /* Parse remaining arguments */
     for (i = 1; i < argc; i ++) {
@@ -768,6 +825,8 @@ ecs_world_t* ecs_init_w_args(
 				ecs_enable_admin(world, atoi(argv[i + 1]));
                 i ++);
 
+            ARG(0, "console", ecs_enable_console(world));
+
             /* Ignore arguments that were not parsed */
             (void)parsed;
         } else {
@@ -776,6 +835,20 @@ ecs_world_t* ecs_init_w_args(
     }
     
     return world;
+}
+
+static
+void on_demand_in_map_deinit(
+    ecs_map_t *map)
+{
+    ecs_map_iter_t it = ecs_map_iter(map);
+
+    while (ecs_map_hasnext(&it)) {
+        ecs_on_demand_in_t *elem = ecs_map_next(&it);
+        ecs_vector_free(elem->systems);
+    }
+
+    ecs_map_free(map);
 }
 
 int ecs_fini(
@@ -799,6 +872,17 @@ int ecs_fini(
 
     deinit_tables(world);
 
+    col_systems_deinit_handlers(world, world->on_update_systems);
+    col_systems_deinit_handlers(world, world->on_validate_systems);
+    col_systems_deinit_handlers(world, world->pre_update_systems);
+    col_systems_deinit_handlers(world, world->post_update_systems);
+    col_systems_deinit_handlers(world, world->on_load_systems);
+    col_systems_deinit_handlers(world, world->post_load_systems);
+    col_systems_deinit_handlers(world, world->pre_store_systems);
+    col_systems_deinit_handlers(world, world->on_store_systems);
+    col_systems_deinit_handlers(world, world->manual_systems);
+    col_systems_deinit_handlers(world, world->inactive_systems);
+
     col_systems_deinit(world, world->on_update_systems);
     col_systems_deinit(world, world->on_validate_systems);
     col_systems_deinit(world, world->pre_update_systems);
@@ -807,7 +891,7 @@ int ecs_fini(
     col_systems_deinit(world, world->post_load_systems);
     col_systems_deinit(world, world->pre_store_systems);
     col_systems_deinit(world, world->on_store_systems);
-    col_systems_deinit(world, world->on_demand_systems);
+    col_systems_deinit(world, world->manual_systems);
     col_systems_deinit(world, world->inactive_systems);
 
     row_systems_deinit(world, world->add_systems);
@@ -823,6 +907,9 @@ int ecs_fini(
     ecs_stage_deinit(world, &world->main_stage);
     ecs_stage_deinit(world, &world->temp_stage);
 
+    on_demand_in_map_deinit(world->on_activate_components);
+    on_demand_in_map_deinit(world->on_enable_components);
+
     ecs_vector_free(world->on_update_systems);
     ecs_vector_free(world->on_validate_systems);
     ecs_vector_free(world->pre_update_systems);
@@ -833,12 +920,14 @@ int ecs_fini(
     ecs_vector_free(world->on_store_systems);
 
     ecs_vector_free(world->inactive_systems);
-    ecs_vector_free(world->on_demand_systems);
+    ecs_vector_free(world->manual_systems);
     ecs_vector_free(world->fini_tasks);
 
     ecs_vector_free(world->add_systems);
     ecs_vector_free(world->remove_systems);
     ecs_vector_free(world->set_systems);
+
+
 
     world->magic = 0;
 
@@ -895,6 +984,10 @@ ecs_entity_t ecs_lookup_child_in_columns(
     uint32_t i, count = ecs_vector_count(column->data);
     
     for (i = 0; i < count; i ++) {
+        if (!buffer[i]) {
+            continue;
+        }
+        
         if (!strcmp(buffer[i], id)) {
             return *(ecs_entity_t*)ecs_vector_get(
                 columns[0].data, &handle_arr_params, i);
@@ -1035,9 +1128,14 @@ void run_single_thread_stage(
             world->in_progress = true;
         }
 
+        ecs_time_t start = {0};
+        ecs_time_measure(&start);
+
         for (i = 0; i < system_count; i ++) {
             ecs_run(world, buffer[i], world->delta_time, NULL);
         }
+
+        world->system_time_total += ecs_time_measure(&start);
 
         if (staged && world->auto_merge) {
             world->in_progress = false;
@@ -1066,7 +1164,13 @@ void run_multi_thread_stage(
             }
             ecs_prepare_jobs(world, buffer[i]);
         }
+
+        ecs_time_t start;
+        ecs_time_measure(&start);
+
         ecs_run_jobs(world);
+
+        world->system_time_total += ecs_time_measure(&start);
 
         if (world->auto_merge) {
             world->in_progress = false;
@@ -1084,9 +1188,9 @@ float start_measure_frame(
     float delta_time = 0;
 
     if (world->measure_frame_time || !user_delta_time) {
-        ecs_time_t t = world->frame_start;
+        ecs_time_t t = world->frame_start_time;
         do {
-            if (world->frame_start.sec) {
+            if (world->frame_start_time.sec) {
                 delta_time = ecs_time_measure(&t);
             } else {
                 ecs_time_measure(&t);
@@ -1097,10 +1201,14 @@ float start_measure_frame(
                 }
             }
         
-        /* Keep trying until delta_time is zero */
+        /* Keep trying while delta_time is zero */
         } while (delta_time == 0);
 
-        world->frame_start = t;  
+        world->frame_start_time = t;  
+
+        /* Compute total time passed since start of simulation */
+        ecs_time_t diff = ecs_time_sub(t, world->world_start_time);
+        world->world_time_total = ecs_time_to_double(diff);
     }
 
     return delta_time;
@@ -1112,9 +1220,9 @@ void stop_measure_frame(
     float delta_time)
 {
     if (world->measure_frame_time) {
-        ecs_time_t t = world->frame_start;
+        ecs_time_t t = world->frame_start_time;
         double frame_time = ecs_time_measure(&t);
-        world->frame_time += frame_time;
+        world->frame_time_total += frame_time;
 
         /* Sleep if processing faster than target FPS */
         float target_fps = world->target_fps;
@@ -1145,8 +1253,6 @@ bool ecs_progress(
     }
 
     world->delta_time = user_delta_time;
-    world->world_time += user_delta_time;
-    world->merge_time = 0;
 
     bool has_threads = ecs_vector_count(world->worker_threads) != 0;
 
@@ -1182,12 +1288,9 @@ bool ecs_progress(
 
     /* -- System execution stops here -- */
 
-    world->tick ++;
+    world->frame_count_total ++;
     
     stop_measure_frame(world, delta_time);
-    
-    /* Time spent on systems is time spent on frame minus merge time */
-    world->system_time = world->frame_time - world->merge_time;
 
     world->in_progress = false;
 
@@ -1233,7 +1336,7 @@ void ecs_merge(
     }
 
     if (measure_frame_time) {
-        world->merge_time += ecs_time_measure(&t_start);
+        world->merge_time_total += ecs_time_measure(&t_start);
     }
 
     world->is_merging = false;
@@ -1281,8 +1384,10 @@ void ecs_set_target_fps(
     }
 }
 
-/* Spoof EcsAdmin type (needed until we have proper reflection) */
+/* Mock types so we don't have to depend on them. 
+ * TODO: Need a better workaround */
 typedef uint16_t EcsAdmin;
+typedef uint32_t EcsConsole;
 
 int ecs_enable_admin(
 	ecs_world_t* world,
@@ -1310,7 +1415,24 @@ int ecs_enable_admin(
     ecs_entity_t EEcsAdmin = ecs_lookup(world, "EcsAdmin");
     ecs_set(world, 0, EcsAdmin, {port});
 
-    ecs_os_log("Admin is running on port %d", port);
+    ecs_os_log("admin is running on port %d", port);
+
+    return 0;
+}
+
+int ecs_enable_console(
+	ecs_world_t* world)
+{
+    if (ecs_import_from_library(
+        world, "flecs.systems.console", NULL, 0) == ECS_INVALID_ENTITY) 
+    {
+        ecs_os_err("Failed to load flecs.systems.console");
+        return 1;
+    }
+
+    /* Create console instance */
+    ecs_entity_t EEcsConsole = ecs_lookup(world, "EcsConsole");
+    ecs_set(world, 0, EcsConsole, {0});
 
     return 0;
 }
@@ -1326,7 +1448,7 @@ uint32_t ecs_get_tick(
     ecs_world_t *world)
 {
     ecs_get_stage(&world);
-    return world->tick;    
+    return world->frame_count_total;
 }
 
 void ecs_set_context(
@@ -1366,7 +1488,7 @@ bool ecs_enable_range_check(
 
 ecs_entity_t _ecs_import(
     ecs_world_t *world,
-    ecs_module_init_action_t module,
+    ecs_module_init_action_t init_action,
     const char *module_name,
     int flags,
     void *handles_out,
@@ -1375,7 +1497,7 @@ ecs_entity_t _ecs_import(
     ecs_entity_t e = ecs_lookup(world, module_name);
     if (!e) {
         /* Load module */
-        module(world, flags);
+        init_action(world, flags);
 
         /* Lookup module component (must be registered by module) */
         e = ecs_lookup(world, module_name);
@@ -1404,6 +1526,9 @@ ecs_entity_t ecs_import_from_library(
     const char *module_name,
     int flags)
 {
+    ecs_assert(library_name != NULL, ECS_INVALID_PARAMETER, NULL);
+    ecs_assert(module_name != NULL, ECS_INVALID_PARAMETER, NULL);
+
     char *import_func = (char*)module_name; /* safe */
     char *module = (char*)module_name;
 
@@ -1422,6 +1547,8 @@ ecs_entity_t ecs_import_from_library(
      * the main module from the library */
     if (!import_func) {
         import_func = ecs_os_malloc(strlen(library_name) + sizeof("Import"));
+        ecs_assert(import_func != NULL, ECS_OUT_OF_MEMORY, NULL);
+        
         const char *ptr;
         char ch, *bptr = import_func;
         bool capitalize = true;
@@ -1439,9 +1566,11 @@ ecs_entity_t ecs_import_from_library(
                 }
             }
         }
+
         *bptr = '\0';
 
-        module = strdup(import_func);
+        module = ecs_os_strdup(import_func);
+        ecs_assert(module != NULL, ECS_OUT_OF_MEMORY, NULL);
 
         strcat(bptr, "Import");
     }
@@ -1449,7 +1578,10 @@ ecs_entity_t ecs_import_from_library(
     char *library_filename = ecs_os_module_to_dl(library_name);
     if (!library_filename) {
         ecs_os_err("failed to find library file for '%s'", library_name);
-        return ECS_INVALID_ENTITY;
+        if (module != module_name) {
+            ecs_os_free(module);
+        }
+        return 0;
     } else {
         ecs_os_dbg("found file '%s' for library '%s'", 
             library_filename, library_name);
@@ -1459,8 +1591,14 @@ ecs_entity_t ecs_import_from_library(
     if (!dl) {
         ecs_os_err("failed to load library '%s' ('%s')", 
             library_name, library_filename);
-        free(library_filename);
-        return ECS_INVALID_ENTITY;
+        
+        ecs_os_free(library_filename);
+
+        if (module != module_name) {
+            ecs_os_free(module);
+        }    
+
+        return 0;
     } else {
         ecs_os_dbg("library '%s' ('%s') loaded", 
             library_name, library_filename);
@@ -1483,11 +1621,11 @@ ecs_entity_t ecs_import_from_library(
     ecs_entity_t result = _ecs_import(world, action, module, flags, NULL, 0);
 
     if (import_func != module_name) {
-        free(import_func);
+        ecs_os_free(import_func);
     }
 
     if (module != module_name) {
-        free(module);
+        ecs_os_free(module);
     }
 
     free(library_filename);

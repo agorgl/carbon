@@ -1,5 +1,5 @@
-
 #include "flecs_private.h"
+#include <string.h>
 
 void _ecs_abort(
     uint32_t error_code,
@@ -33,8 +33,44 @@ void _ecs_assert(
             ecs_os_err("assert(%s) %s:%d: %s",
                 condition_str, file, line, ecs_strerror(error_code));
         }
+
         ecs_os_abort();
     }
+}
+
+void _ecs_parser_error(
+    const char *name,
+    const char *expr, 
+    int column,
+    const char *fmt,
+    ...)
+{
+    va_list valist;
+    va_start(valist, fmt);
+
+    /* Most messages should fit in 80 characters, but if not, allocate a string
+     * that is large enough */
+    char *msg, msg_buf[80];
+    int required = vsnprintf(msg_buf, 80, fmt, valist);
+    if (required > 80) {
+        msg = ecs_os_malloc(required + 1);
+        int written = vsnprintf(msg, required, fmt, valist);
+        ecs_assert(written == required, ECS_INTERNAL_ERROR, NULL);
+    } else {
+        msg = msg_buf;
+    }
+
+    va_end(valist);
+
+    fprintf(stderr, "%s:%d: error: %s\n", name, column + 1, msg);
+    fprintf(stderr, "    %s\n", expr);
+    fprintf(stderr, "    %*s^\n", column, "");
+
+    if (msg != msg_buf) {
+        ecs_os_free(msg);
+    }
+
+    ecs_os_abort();
 }
 
 const char* ecs_strerror(
@@ -109,6 +145,16 @@ const char* ecs_strerror(
         return "a prefab child type must have at least one INSTANCEOF element";
     case ECS_UNSUPPORTED:
         return "operation is unsupported";
+    case ECS_NO_OUT_COLUMNS:
+        return "on demand system has no out columns";
+    case ECS_COLUMN_ACCESS_VIOLATION:
+        return "invalid access to readonly column (use const)";
+    case ECS_DESERIALIZE_COMPONENT_ID_CONFLICT:
+        return "serialized data contains conflicting component id";
+    case ECS_DESERIALIZE_COMPONENT_SIZE_CONFLICT:
+        return "serialized data contains conflicting component size";   
+    case ECS_DESERIALIZE_FORMAT_ERROR:
+        return "serialized data has invalid format";
     }
 
     return "unknown error code";

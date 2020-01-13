@@ -63,6 +63,9 @@ ecs_entity_t ecs_get_entity_for_component(
     ecs_type_t type_id,
     ecs_entity_t component);
 
+void ecs_clear_w_filter(
+    ecs_world_t *world,
+    const ecs_filter_t *filter);
 
 /* -- World API -- */
 
@@ -118,7 +121,7 @@ ecs_type_t ecs_type_find_intern(
     ecs_entity_t *buf,
     uint32_t count);
 
-/* Merge add/remove families */
+/* Merge add/remove types */
 ecs_type_t ecs_type_merge_intern(
     ecs_world_t *world,
     ecs_stage_t *stage,
@@ -259,10 +262,20 @@ void ecs_table_free(
     ecs_table_t *table);
 
 /* Clear table data */
-void ecs_table_clear(
+void ecs_table_delete_all(
     ecs_world_t *world,
     ecs_table_t *table);
 
+void ecs_table_clear(
+    ecs_world_t *world,
+    ecs_table_t *table);    
+
+/* Clear data in columns */
+void ecs_table_replace_columns(
+    ecs_world_t *world,
+    ecs_table_t *table,
+    ecs_table_column_t *columns);
+    
 /* Merge data of one table into another table */
 void ecs_table_merge(
     ecs_world_t *world,
@@ -293,6 +306,24 @@ void ecs_system_init_base(
 
 /* Compute the AND type from the system columns */
 void ecs_system_compute_and_families(
+    ecs_world_t *world,
+    EcsSystem *system_data);
+
+/* Invoked when system becomes active / inactive */
+void ecs_system_activate(
+    ecs_world_t *world,
+    ecs_entity_t system,
+    bool activate);
+
+/* Invoke status action */
+void ecs_invoke_status_action(
+    ecs_world_t *world,
+    ecs_entity_t system,
+    EcsColSystem *system_data,
+    ecs_system_status_t status);
+
+/* Check if all non-table column constraints are met */
+bool ecs_check_column_constraints(
     ecs_world_t *world,
     EcsSystem *system_data);
 
@@ -342,8 +373,12 @@ ecs_type_t ecs_notify_row_system(
 /* Callback for parse_component_expr that stores result as ecs_system_column_t's */
 int ecs_parse_signature_action(
     ecs_world_t *world,
+    const char *system_id,
+    const char *sig,
+    int column,    
     ecs_system_expr_elem_kind_t elem_kind,
     ecs_system_expr_oper_kind_t oper_kind,
+    ecs_system_expr_inout_kind_t inout_kind,
     const char *component_id,
     const char *source_id,
     void *data);
@@ -357,6 +392,14 @@ void ecs_rematch_system(
 void ecs_revalidate_system_refs(
     ecs_world_t *world,
     ecs_entity_t system);
+
+void ecs_measure_frame_time(
+    ecs_world_t *world,
+    bool enable);
+
+void ecs_measure_system_time(
+    ecs_world_t *world,
+    bool enable);
 
 /* -- Worker API -- */
 
@@ -398,17 +441,23 @@ ecs_row_t ecs_to_row(
 uint64_t ecs_from_row(
     ecs_row_t row);
 
+/* Utility that print a descriptive error string*/
+//void ecs_print_error_string(const char *error_description, const char* signature, const char* system_id, const char* component_id);
+//void ecs_print_error_string(const char* signature, const char *system_id, const char *error_description, const char *component_id);
+
 /* Utility that parses system signature */
 int ecs_parse_component_expr(
     ecs_world_t *world,
     const char *sig,
     ecs_parse_action_t action,
+    const char *system_id,
     void *ctx);
 
 /* Test whether signature has columns that must be retrieved from a table */
 bool ecs_needs_tables(
     ecs_world_t *world,
-    const char *signature);
+    const char *signature,
+    const char *system_id);
 
 /* Count number of columns signature */
 uint32_t ecs_columns_count(

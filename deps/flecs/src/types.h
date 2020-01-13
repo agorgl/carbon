@@ -24,6 +24,7 @@
 #endif
 
 #include <flecs.h>
+#include <flecs/util/dbg.h>
 
 #define ECS_WORLD_INITIAL_TABLE_COUNT (2)
 #define ECS_WORLD_INITIAL_ENTITY_COUNT (2)
@@ -51,12 +52,6 @@
 
 
 /* -- Builtin component types -- */
-
-/** Metadata of an explicitly created type (ECS_TYPE or ecs_new_type) */
-typedef struct EcsTypeComponent {
-    ecs_type_t type;    /* Preserved nested families */
-    ecs_type_t resolved;  /* Resolved nested families */
-} EcsTypeComponent;
 
 /* For prefabs with child entities, the parent prefab must be marked so that
  * flecs knows not to share components from it, as adding a prefab as a parent
@@ -90,6 +85,12 @@ typedef struct EcsPrefabBuilder {
     ecs_vector_t *ops; /* ecs_builder_op_t */
 } EcsPrefabBuilder;
 
+typedef enum ecs_system_expr_inout_kind_t {
+    EcsInOut,
+    EcsIn,
+    EcsOut
+} ecs_system_expr_inout_kind_t;
+
 /** Type that is used by systems to indicate where to fetch a component from */
 typedef enum ecs_system_expr_elem_kind_t {
     EcsFromSelf,            /* Get component from self (default) */
@@ -114,8 +115,12 @@ typedef enum ecs_system_expr_oper_kind_t {
 /** Callback used by the system signature expression parser */
 typedef int (*ecs_parse_action_t)(
     ecs_world_t *world,
+    const char *id,
+    const char *expr,
+    int column,
     ecs_system_expr_elem_kind_t elem_kind,
     ecs_system_expr_oper_kind_t oper_kind,
+    ecs_system_expr_inout_kind_t inout_kind,
     const char *component,
     const char *source,
     void *ctx);
@@ -124,6 +129,7 @@ typedef int (*ecs_parse_action_t)(
 typedef struct ecs_system_column_t {
     ecs_system_expr_elem_kind_t kind;       /* Element kind (Entity, Component) */
     ecs_system_expr_oper_kind_t oper_kind;  /* Operator kind (AND, OR, NOT) */
+    ecs_system_expr_inout_kind_t inout_kind;     /* Is component read or written */
     union {
         ecs_type_t type;             /* Used for OR operator */
         ecs_entity_t component;      /* Used for AND operator */
@@ -132,25 +138,33 @@ typedef struct ecs_system_column_t {
 } ecs_system_column_t;
 
 /** A table column describes a single column in a table (archetype) */
-typedef struct ecs_table_column_t {
+struct ecs_table_column_t {
     ecs_vector_t *data;              /* Column data */
     uint16_t size;                   /* Column size (saves component lookups) */
-} ecs_table_column_t;
+};
 
 #define EcsTableIsStaged  (1)
 #define EcsTableIsPrefab (2)
 #define EcsTableHasPrefab (4)
+#define EcsTableHasBuiltins (8)
 
 /** A table is the Flecs equivalent of an archetype. Tables store all entities
  * with a specific set of components. Tables are automatically created when an
  * entity has a set of components not previously observed before. When a new
  * table is created, it is automatically matched with existing column systems */
-typedef struct ecs_table_t {
+struct ecs_table_t {
     ecs_table_column_t *columns;      /* Columns storing components of array */
     ecs_vector_t *frame_systems;      /* Frame systems matched with table */
     ecs_type_t type;                  /* Identifies table type in type_index */
     uint32_t flags;                   /* Flags for testing table properties */
- } ecs_table_t;
+};
+
+/** Cached reference to a component in an entity */
+struct ecs_reference_t {
+    ecs_entity_t entity;
+    ecs_entity_t component;
+    void *cached_ptr;
+};
 
 /** Type containing data for a table matched with a system */
 typedef struct ecs_matched_table_t {
@@ -161,10 +175,23 @@ typedef struct ecs_matched_table_t {
     int32_t depth;                  /* Depth of table (when using CASCADE) */
 } ecs_matched_table_t;
 
+/** Keep track of how many [in] columns are active for [out] columns of OnDemand
+ * systems. */
+typedef struct ecs_on_demand_out_t {
+    ecs_entity_t system;    /* Handle to system */
+    uint32_t count;         /* Total number of times [out] columns are used */
+} ecs_on_demand_out_t;
+
+/** Keep track of which OnDemand systems are matched with which [in] columns */
+typedef struct ecs_on_demand_in_t {
+    int32_t count;         /* Number of active systems with [in] column */
+    ecs_vector_t *systems;  /* Systems that have this column as [out] column */
+} ecs_on_demand_in_t;
+
 /** Base type for a system */
 typedef struct EcsSystem {
     ecs_system_action_t action;    /* Callback to be invoked for matching rows */
-    const char *signature;         /* Signature with which system was created */
+    char *signature;         /* Signature with which system was created */
     ecs_vector_t *columns;         /* Column components */
     void *ctx;                     /* User data */
 
@@ -178,9 +205,10 @@ typedef struct EcsSystem {
     ecs_type_t and_from_shared;      /* Which components are required from entity */
     ecs_type_t and_from_system;    /* Used to auto-add components to system */
     
-    int32_t cascade_by;            /* CASCADE column index */
     EcsSystemKind kind;            /* Kind of system */
-    double time_spent;              /* Time spent on running system */
+    int32_t cascade_by;            /* CASCADE column index */
+    int64_t invoke_count;          /* Number of times system was invoked */
+    double time_spent;             /* Time spent on running system */
     bool enabled;                  /* Is system enabled or not */
     bool has_refs;                 /* Does the system have reference columns */
     bool needs_tables;             /* Does the system need table matching */
@@ -232,6 +260,9 @@ typedef struct EcsColSystem {
     ecs_vector_t *jobs;                   /* Jobs for this system */
     ecs_vector_t *tables;                 /* Vector with matched tables */
     ecs_vector_t *inactive_tables;        /* Inactive tables */
+    ecs_on_demand_out_t *on_demand;       /* Keep track of [out] column refs */
+    ecs_system_status_action_t status_action; /* Status action */
+    void *status_ctx;                     /* User data for status action */
     ecs_vector_params_t column_params;    /* Parameters for table_columns */
     ecs_vector_params_t component_params; /* Parameters for components */
     ecs_vector_params_t ref_params;       /* Parameters for refs */
@@ -359,9 +390,17 @@ typedef struct ecs_thread_t {
     uint16_t index;                           /* Index of thread */
 } ecs_thread_t;
 
+/* World snapshot */
+struct ecs_snapshot_t {
+    ecs_map_t *entity_index;
+    ecs_chunked_t *tables;
+    ecs_entity_t last_handle;
+    ecs_filter_t filter;
+};
+
 /** The world stores and manages all ECS data. An application can have more than
  * one world, but data is not shared between worlds. */
-struct ecs_world {
+struct ecs_world_t {
     uint32_t magic;               /* Magic number to verify world pointer */
     float delta_time;             /* Time passed to or computed by ecs_progress */
     void *context;                /* Application context */
@@ -376,8 +415,13 @@ struct ecs_world {
     ecs_vector_t *post_update_systems; 
     ecs_vector_t *pre_store_systems; 
     ecs_vector_t *on_store_systems;   
-    ecs_vector_t *on_demand_systems;  
-    ecs_vector_t *inactive_systems;   
+    ecs_vector_t *manual_systems;  
+    ecs_vector_t *inactive_systems;
+
+    /* -- OnDemand systems -- */
+    
+    ecs_map_t *on_activate_components; /* Trigger on activate of [in] column */
+    ecs_map_t *on_enable_components; /* Trigger on enable of [in] column */
 
 
     /* -- Row systems -- */
@@ -394,11 +438,12 @@ struct ecs_world {
 
     /* -- Lookup Indices -- */
 
-    ecs_map_t *prefab_parent_index;   /* Index to find flag for prefab parent */
     ecs_map_t *type_sys_add_index;    /* Index to find add row systems for type */
     ecs_map_t *type_sys_remove_index; /* Index to find remove row systems for type*/
     ecs_map_t *type_sys_set_index;    /* Index to find set row systems for type */
-    ecs_map_t *type_handles;          /* Handles to named families */
+    
+    ecs_map_t *prefab_parent_index;   /* Index to find flag for prefab parent */
+    ecs_map_t *type_handles;          /* Handles to named types */
 
 
     /* -- Staging -- */
@@ -423,7 +468,7 @@ struct ecs_world {
     ecs_entity_t max_handle;         /* Last allowed handle */
 
 
-    /* -- Handles to builtin components families -- */
+    /* -- Handles to builtin components types -- */
 
     ecs_type_t t_component;
     ecs_type_t t_type;
@@ -435,14 +480,19 @@ struct ecs_world {
 
     /* -- Time management -- */
 
-    uint32_t tick;                /* Number of computed frames by world */
-    ecs_time_t frame_start;       /* Starting timestamp of frame */
-    float frame_time;             /* Time spent processing a frame */
-    float system_time;            /* Time spent processing systems */
-    float merge_time;             /* Time spent on merging */
+    ecs_time_t world_start_time;  /* Timestamp of simulation start */
+    ecs_time_t frame_start_time;  /* Timestamp of frame start */
     float target_fps;             /* Target fps */
     float fps_sleep;              /* Sleep time to prevent fps overshoot */
-    float world_time;             /* Time since start of simulation */
+
+
+    /* -- Metrics -- */
+
+    double frame_time_total;      /* Total time spent in processing a frame */
+    double system_time_total;     /* Total time spent in periodic systems */
+    double merge_time_total;      /* Total time spent in merges */
+    double world_time_total;      /* Time elapsed since first frame */
+    uint32_t frame_count_total;   /* Total number of frames */
 
 
     /* -- Settings from command line arguments -- */
@@ -477,5 +527,6 @@ extern const ecs_vector_params_t system_column_params;
 extern const ecs_vector_params_t matched_table_params;
 extern const ecs_vector_params_t matched_column_params;
 extern const ecs_vector_params_t reference_params;
+extern const ecs_vector_params_t ptr_params;
 
 #endif

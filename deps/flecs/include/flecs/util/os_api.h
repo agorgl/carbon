@@ -13,6 +13,17 @@
 extern "C" {
 #endif
 
+typedef struct ecs_time_t {
+    int32_t sec;
+    uint32_t nanosec;
+} ecs_time_t;
+
+/* Allocation counters (not thread safe) */
+extern uint64_t ecs_os_api_malloc_count;
+extern uint64_t ecs_os_api_realloc_count;
+extern uint64_t ecs_os_api_calloc_count;
+extern uint64_t ecs_os_api_free_count;
+
 /* Use handle types that _at least_ can store pointers */
 typedef uintptr_t ecs_os_thread_t;
 typedef uintptr_t ecs_os_cond_t;
@@ -41,6 +52,9 @@ void* (*ecs_os_api_calloc_t)(
     size_t num,
     size_t size);
 
+typedef
+char* (*ecs_os_api_strdup_t)(
+    const char *str);
 
 /* Threads */
 typedef
@@ -141,6 +155,7 @@ typedef struct ecs_os_api_t {
     ecs_os_api_realloc_t realloc;
     ecs_os_api_calloc_t calloc;
     ecs_os_api_free_t free;
+    ecs_os_api_strdup_t strdup;
 
     /* Threads */
     ecs_os_api_thread_new_t thread_new;
@@ -197,6 +212,7 @@ void ecs_os_set_api_defaults(void);
 #define ecs_os_free(ptr) ecs_os_api.free(ptr);
 #define ecs_os_realloc(ptr, size) ecs_os_api.realloc(ptr, size)
 #define ecs_os_calloc(num, size) ecs_os_api.calloc(num, size)
+#define ecs_os_strdup(str) ecs_os_api.strdup(str)
 
 #if defined(_MSC_VER) || defined(__MINGW32__)
 #define ecs_os_alloca(type, count) _alloca(sizeof(type) * (count))
@@ -266,6 +282,22 @@ void ecs_sleepf(
 FLECS_EXPORT
 double ecs_time_measure(
     ecs_time_t *start);
+
+/* Calculate difference between two timestamps */
+FLECS_EXPORT
+ecs_time_t ecs_time_sub(
+    ecs_time_t t1,
+    ecs_time_t t2);
+
+/* Convert time value to a double */
+FLECS_EXPORT
+double ecs_time_to_double(
+    ecs_time_t t);
+
+FLECS_EXPORT
+void* ecs_os_memdup(
+    const void *src, 
+    size_t size);
 
 #ifdef __cplusplus
 }

@@ -107,19 +107,25 @@ void add_table(
 
     table_data->table = table;
     table_data->references = NULL;
+    table_data->columns = NULL;
+    table_data->components = NULL;
 
-    /* Array that contains the system column to table column mapping */
-    table_data->columns = ecs_os_malloc(sizeof(uint32_t) * column_count);
+    if (column_count) {
+        /* Array that contains the system column to table column mapping */
+        table_data->columns = ecs_os_malloc(sizeof(uint32_t) * column_count);
+        ecs_assert(table_data->columns != NULL, ECS_OUT_OF_MEMORY, NULL);
 
-    /* Store the components of the matched table. In the case of OR expressions,
-     * components may differ per matched table. */
-    table_data->components = ecs_os_malloc(sizeof(ecs_entity_t) * column_count);
+        /* Store the components of the matched table. In the case of OR expressions,
+        * components may differ per matched table. */
+        table_data->components = ecs_os_malloc(sizeof(ecs_entity_t) * column_count);
+        ecs_assert(table_data->components != NULL, ECS_OUT_OF_MEMORY, NULL);
+    }
 
     /* Walk columns parsed from the system signature */
     ecs_system_column_t *columns = ecs_vector_first(system_data->base.columns);
-    uint32_t c, count = ecs_vector_count(system_data->base.columns);
+    uint32_t c;
 
-    for (c = 0; c < count; c ++) {
+    for (c = 0; c < column_count; c ++) {
         ecs_system_column_t *column = &columns[c];
         ecs_entity_t entity = 0, component = 0;
         ecs_system_expr_elem_kind_t kind = column->kind;
@@ -252,12 +258,12 @@ void add_table(
                     } else {
                         e = ecs_get_entity_for_component(
                             world, entity, table_type, component);
-
-                        if (kind != EcsCascade) {
-                            ecs_assert(e != 0, ECS_INTERNAL_ERROR, NULL);
-                        }
                     }
 
+                    if (kind != EcsCascade) {
+                        ecs_assert(e != 0, ECS_INTERNAL_ERROR, NULL);
+                    }
+                    
                     ref->entity = e;
                     ref->component = component;
                     
@@ -310,11 +316,22 @@ bool match_table(
     ecs_world_t *world,
     ecs_table_t *table,
     ecs_entity_t system,
-    EcsColSystem *system_data)
+    EcsColSystem *system_data,
+    ecs_dbg_match_failure_t *failure_info)
 {
     (void)system; /* useful for debugging */
 
+    /* Prevent having to add if not null checks everywhere */
+    ecs_dbg_match_failure_t tmp_failure_info;
+    if (!failure_info) {
+        failure_info = &tmp_failure_info;
+    }
+
+    failure_info->reason = EcsMatchOk;
+    failure_info->column = 0;
+
     if (!system_data->base.needs_tables) {
+        failure_info->reason = EcsMatchSystemIsATask;
         return false;
     }
 
@@ -324,6 +341,7 @@ bool match_table(
         world, table_type, EEcsDisabled, false))
     {
         /* Don't match disabled entities */
+        failure_info->reason = EcsMatchEntityIsDisabled;
         return false;
     }
 
@@ -331,39 +349,44 @@ bool match_table(
         world, table_type, EEcsPrefab, false))
     {
         /* Don't match prefab entities */
+        failure_info->reason = EcsMatchEntityIsPrefab;
         return false;
     }
 
-    /* Test if table has SELF columns in either owned or inherited components */
-    type = system_data->base.and_from_self;
-    if (type && !ecs_type_contains(
-        world, table_type, type, true, true))
-    {
-        return false;
-    }
+    /* Only do quick checks if failure info is not requested. These checks do
+     * not provide information about which column caused the match failure. */
+    if (failure_info == &tmp_failure_info) {
+        /* Test if table has SELF columns in either owned or inherited components */
+        type = system_data->base.and_from_self;
+        if (type && !ecs_type_contains(
+            world, table_type, type, true, true))
+        {
+            return false;
+        }
 
-    /* Test if table has OWNED columns in owned components */
-    type = system_data->base.and_from_owned;
-    if (type && !ecs_type_contains(
-        world, table_type, type, true, false))
-    {
-        return false;
-    }  
+        /* Test if table has OWNED columns in owned components */
+        type = system_data->base.and_from_owned;
+        if (type && !ecs_type_contains(
+            world, table_type, type, true, false))
+        {
+            return false;
+        }  
 
-    /* Test if table has SHARED columns in shared components */
-    type = system_data->base.and_from_shared;
-    if (type && ecs_type_contains(
-        world, table_type, type, true, false))
-    {
-        /* If table has owned components that override the SHARED component, the
-         * table won't match. */
-        return false;
-    } else if (type && !ecs_type_contains(
-        world, table_type, type, true, true))
-    {
-        /* If the table does not have owned components, ensure that a SHARED
-         * component can be found in prefabs. If not, the table doesn't match. */
-        return false;
+        /* Test if table has SHARED columns in shared components */
+        type = system_data->base.and_from_shared;
+        if (type && ecs_type_contains(
+            world, table_type, type, true, false))
+        {
+            /* If table has owned components that override the SHARED component, the
+            * table won't match. */
+            return false;
+        } else if (type && !ecs_type_contains(
+            world, table_type, type, true, true))
+        {
+            /* If the table does not have owned components, ensure that a SHARED
+            * component can be found in prefabs. If not, the table doesn't match. */
+            return false;
+        }
     }
 
     uint32_t i, column_count = ecs_vector_count(system_data->base.columns);
@@ -375,19 +398,50 @@ bool match_table(
         ecs_system_expr_oper_kind_t oper_kind = elem->oper_kind;
 
         if (oper_kind == EcsOperAnd) {
-            if (elem_kind == EcsFromSelf || elem_kind == EcsFromOwned || 
-                elem_kind == EcsFromShared) 
-            {
-                /* Already validated */
+            if (elem_kind == EcsFromSelf) {
+                if (!ecs_type_has_entity_intern(
+                        world, table_type, elem->is.component, true))
+                {
+                    failure_info->reason = EcsMatchFromSelf;
+                    failure_info->column = i + 1;
+                    return false;
+                }
+            } else if (elem_kind == EcsFromOwned) {
+                if (!ecs_type_has_entity_intern(
+                        world, table_type, elem->is.component, false))
+                {
+                    failure_info->reason = EcsMatchFromOwned;
+                    failure_info->column = i + 1;
+                    return false;
+                }                
+            } else if (elem_kind == EcsFromShared) {
+                if (ecs_type_has_entity_intern(
+                        world, table_type, elem->is.component, false))
+                {
+                    failure_info->reason = EcsMatchFromSelf;
+                    failure_info->column = i + 1;
+                    return false;
+                } else
+                if (!ecs_type_has_entity_intern(
+                    world, table_type, elem->is.component, true))
+                {
+                    failure_info->reason = EcsMatchFromSelf;
+                    failure_info->column = i + 1;
+                    return false;                    
+                }
             } else if (elem_kind == EcsFromContainer) {
                 if (!ecs_components_contains_component(
                     world, table_type, elem->is.component, ECS_CHILDOF, NULL))
                 {
+                    failure_info->reason = EcsMatchFromContainer;
+                    failure_info->column = i + 1;
                     return false;
                 }
             } else if (elem_kind == EcsFromEntity) {
                 ecs_type_t type = ecs_get_type(world, elem->source);
                 if (!ecs_type_has_entity(world, type, elem->is.component)) {
+                    failure_info->reason = EcsMatchFromEntity;
+                    failure_info->column = i + 1;
                     return false;
                 }
             }
@@ -397,21 +451,22 @@ bool match_table(
                 if (!ecs_type_contains(
                     world, table_type, type, false, true))
                 {
+                    failure_info->reason = EcsMatchOrFromSelf;
+                    failure_info->column = i + 1;
                     return false;
                 }
             } else if (elem_kind == EcsFromContainer) {
                 if (!components_contains(
                     world, table_type, type, NULL, false))
                 {
+                    failure_info->reason = EcsMatchOrFromContainer;
+                    failure_info->column = i + 1;
                     return false;
                 }
             }
         } else if (oper_kind == EcsOperNot) {
             if (elem_kind == EcsFromEntity) {
-                ecs_type_t type = ecs_get_type(world, elem->source);
-                if (ecs_type_has_entity(world, type, elem->is.component)) {
-                    return false;
-                }
+                /* Not a table column constraint, is verified by other logic */
             }
         }
     }
@@ -419,12 +474,14 @@ bool match_table(
     type = system_data->base.not_from_self;
     if (type && ecs_type_contains(world, table_type, type, false, true))
     {
+        failure_info->reason = EcsMatchNotFromSelf;
         return false;
     }
 
     type = system_data->base.not_from_owned;
     if (type && ecs_type_contains(world, table_type, type, false, false))
     {
+        failure_info->reason = EcsMatchNotFromOwned;
         return false;
     }
 
@@ -432,6 +489,7 @@ bool match_table(
     if (type && !ecs_type_contains(world, table_type, type, false, false))
     {
         if (ecs_type_contains(world, table_type, type, false, true)) {
+            failure_info->reason = EcsMatchNotFromShared;
             return false;
         }
     }        
@@ -440,6 +498,7 @@ bool match_table(
     if (type && components_contains(
         world, table_type, type, NULL, false))
     {
+        failure_info->reason = EcsMatchNotFromContainer;
         return false;
     }
 
@@ -498,7 +557,7 @@ void match_tables(
         ecs_table_t *table = ecs_chunked_get(
             world->main_stage.tables, ecs_table_t, i);
 
-        if (match_table(world, table, system, system_data)) {
+        if (match_table(world, table, system, system_data, NULL)) {
             add_table(world, system, system_data, table);
         }
     }
@@ -586,7 +645,7 @@ void ecs_rematch_system(
         ecs_table_t *table = ecs_chunked_get(tables, ecs_table_t, i);
         int32_t match = table_matched(system_data, system_data->tables, table);
 
-        if (match_table(world, table, system, system_data)) {
+        if (match_table(world, table, system, system_data, NULL)) {
             /* If the table matches, and it is not currently matched, add */
             if (match == -1) {
                 if (table_matched(system_data, system_data->inactive_tables, table) == -1) {
@@ -621,6 +680,11 @@ void ecs_rematch_system(
     if (system_data->base.cascade_by) {
         order_cascade_tables(world, system_data);
     }
+
+    /* Enable/disable system if constraints are (not) met. If the system is
+     * already dis/enabled this operation has no side effects. */
+    ecs_enable(world, system, 
+        ecs_check_column_constraints(world, (EcsSystem*)system_data));
 }
 
 /** Revalidate references after a realloc occurred in a table */
@@ -664,7 +728,7 @@ void ecs_col_system_notify_of_table(
     EcsColSystem *system_data = ecs_get_ptr(world, system, EcsColSystem);
     assert(system_data != NULL);
 
-    if (match_table(world, table, system, system_data)) {
+    if (match_table(world, table, system, system_data, NULL)) {
         add_table(world, system, system_data, table);
     }
 }
@@ -702,7 +766,10 @@ void ecs_system_activate_table(
     bool active)
 {
     ecs_vector_t *src_array, *dst_array;
+
     EcsColSystem *system_data = ecs_get_ptr(world, system, EcsColSystem);
+    ecs_assert(system_data != NULL, ECS_INTERNAL_ERROR, NULL);
+    
     EcsSystemKind kind = system_data->base.kind;
 
     if (active) {
@@ -720,19 +787,15 @@ void ecs_system_activate_table(
 
     if (active) {
         uint32_t dst_count = ecs_vector_count(dst_array);
-        if (kind != EcsManual) {
-            if (dst_count == 1 && system_data->base.enabled) {
-                ecs_world_activate_system(
-                    world, system, kind, true);
-            }
+        if (dst_count == 1 && system_data->base.enabled) {
+            ecs_world_activate_system(
+                world, system, kind, true);
         }
         system_data->tables = dst_array;
     } else {
-        if (kind != EcsManual) {
-            if (src_count == 0) {
-                ecs_world_activate_system(
-                    world, system, kind, false);
-            }
+        if (src_count == 0) {
+            ecs_world_activate_system(
+                world, system, kind, false);
         }
         system_data->inactive_tables = dst_array;
     }
@@ -749,8 +812,7 @@ ecs_entity_t ecs_new_col_system(
 
     ecs_assert(count != 0, ECS_INVALID_PARAMETER, NULL);
 
-    ecs_entity_t result = _ecs_new(
-        world, world->t_col_system);
+    ecs_entity_t result = _ecs_new(world, world->t_col_system);
 
     EcsId *id_data = ecs_get_ptr(world, result, EcsId);
     *id_data = id;
@@ -759,13 +821,14 @@ ecs_entity_t ecs_new_col_system(
     memset(system_data, 0, sizeof(EcsColSystem));
     system_data->base.action = action;
     system_data->base.enabled = true;
-    system_data->base.signature = sig;
+    system_data->base.signature = ecs_os_strdup(sig);
     system_data->base.time_spent = 0;
     system_data->base.columns = ecs_vector_new(&system_column_params, count);
+    system_data->base.invoke_count = 0;
     system_data->base.kind = kind;
     system_data->base.cascade_by = 0;
     system_data->base.has_refs = false;
-    system_data->base.needs_tables = ecs_needs_tables(world, sig);
+    system_data->base.needs_tables = ecs_needs_tables(world, sig, id);
 
     system_data->column_params.element_size = sizeof(int32_t) * (count);
     system_data->ref_params.element_size = sizeof(ecs_reference_t) * count;
@@ -779,7 +842,7 @@ ecs_entity_t ecs_new_col_system(
         &matched_table_params, ECS_SYSTEM_INITIAL_TABLE_COUNT);
 
     ecs_parse_component_expr(
-        world, sig, ecs_parse_signature_action, system_data);
+        world, sig, ecs_parse_signature_action, id, system_data);
 
     ecs_system_compute_and_families(world, &system_data->base);
 
@@ -797,9 +860,7 @@ ecs_entity_t ecs_new_col_system(
 
     ecs_entity_t *elem = NULL;
 
-    if (kind == EcsManual) {
-        elem = ecs_vector_add(&world->on_demand_systems, &handle_arr_params);
-    } else if (!ecs_vector_count(system_data->tables)) {
+    if (!ecs_vector_count(system_data->tables)) {
         elem = ecs_vector_add(&world->inactive_systems, &handle_arr_params);
     } else {
         if (kind == EcsOnUpdate) {
@@ -818,6 +879,8 @@ ecs_entity_t ecs_new_col_system(
             elem = ecs_vector_add(&world->pre_store_systems, &handle_arr_params);
         } else if (kind == EcsOnStore) {
             elem = ecs_vector_add(&world->on_store_systems, &handle_arr_params);
+        } else if (kind == EcsManual) {
+            elem = ecs_vector_add(&world->manual_systems, &handle_arr_params);
         }
 
         /* Parameter checking happened before this, kind must have been one of
@@ -919,8 +982,10 @@ ecs_entity_t _ecs_run_w_filter(
         .param = param,
         .column_count = column_count,
         .delta_time = system_delta_time,
-        .world_time = world->world_time,
-        .frame_offset = offset
+        .world_time = world->world_time_total,
+        .frame_offset = offset,
+        .table_offset = 0,
+        .system_data = &system_data->base
     };
 
     for (i = 0; i < table_count; i ++) {
@@ -990,6 +1055,7 @@ ecs_entity_t _ecs_run_w_filter(
         action(&info);
 
         info.frame_offset += count;
+        info.table_offset ++;
 
         if (info.interrupted_by) {
             interrupted_by = info.interrupted_by;
@@ -1000,6 +1066,8 @@ ecs_entity_t _ecs_run_w_filter(
     if (measure_time) {
         system_data->base.time_spent += ecs_time_measure(&time_start);
     }
+    
+    system_data->base.invoke_count ++;
 
     return interrupted_by;
 }
@@ -1011,4 +1079,26 @@ ecs_entity_t ecs_run(
     void *param)
 {
     return ecs_run_w_filter(world, system, delta_time, 0, 0, 0, param);
+}
+
+/* -- Debug functionality -- */
+
+bool ecs_dbg_match_entity(
+    ecs_world_t *world,
+    ecs_entity_t entity,
+    ecs_entity_t system,
+    ecs_dbg_match_failure_t *failure_info_out)
+{
+    ecs_dbg_entity_t dbg;
+    ecs_dbg_entity(world, entity, &dbg);
+
+    EcsColSystem *system_data = ecs_get_ptr(world, system, EcsColSystem);
+    if (!system_data) {
+        failure_info_out->reason = EcsMatchNotASystem;
+        failure_info_out->column = -1;
+        return false;
+    }
+
+    return match_table(
+        world, dbg.table, system, system_data, failure_info_out);
 }

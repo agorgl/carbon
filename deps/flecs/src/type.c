@@ -8,10 +8,6 @@ const ecs_vector_params_t type_node_params = {
     .element_size = sizeof(ecs_type_node_t)
 };
 
-const ecs_vector_params_t ptr_params = {
-    .element_size = sizeof(void*)
-};
-
 const ecs_vector_params_t link_params = {
     .element_size = sizeof(ecs_type_link_t*)
 };
@@ -30,20 +26,27 @@ ecs_type_t find_or_create_type(
 static
 int parse_type_action(
     ecs_world_t *world,
+    const char *system_id,
+    const char *sig,
+    int column,
     ecs_system_expr_elem_kind_t elem_kind,
     ecs_system_expr_oper_kind_t oper_kind,
+    ecs_system_expr_inout_kind_t inout_kind,
     const char *entity_id,
     const char *source_id,
     void *data)
 {
     ecs_vector_t **array = data;
     (void)source_id;
+    (void)inout_kind;
 
     if (strcmp(entity_id, "0")) {
         ecs_entity_t entity = 0;
 
         if (elem_kind != EcsFromSelf) {
-            return ECS_INVALID_TYPE_EXPRESSION;
+            ecs_parser_error(system_id, sig, column, 
+                "source modifiers not supported for type expressions");
+            return -1;
         }
 
         if (!strcmp(entity_id, "INSTANCEOF")) {
@@ -55,8 +58,9 @@ int parse_type_action(
         }
         
         if (!entity) {
-            ecs_os_err("%s not found", entity_id);
-            return ECS_INVALID_TYPE_EXPRESSION;
+            ecs_parser_error(system_id, sig, column, 
+                "unresolved identifier '%s'", entity_id);
+            return -1;
         }
 
         if (oper_kind == EcsOperAnd) {
@@ -73,14 +77,18 @@ int parse_type_action(
                 if (entity & ECS_ENTITY_MASK) {
                     /* An expression should not OR entity ids, only entities +
                      * entity flags. */
-                    return ECS_INVALID_TYPE_EXPRESSION;
+                    ecs_parser_error(system_id, sig, column, 
+                        "| operator unsupported in type expression");
+                    return -1;
                 }
             }
 
             *e_ptr |= entity;
         } else {
             /* Only AND and OR operators are supported for type expressions */
-            return ECS_INVALID_TYPE_EXPRESSION;
+            ecs_parser_error(system_id, sig, column, 
+                "invalid operator for type expression");
+            return -1;
         }
     }
 
@@ -433,7 +441,7 @@ ecs_type_t find_or_create_type(
                 break;
             }
 
-            if (create && !type) {
+            if (create) {
                 return NULL;
             }
         }
@@ -564,6 +572,40 @@ ecs_type_t ecs_type_add_intern(
     ecs_type_t result = ecs_type_find_intern(world, stage, new_buffer, pos);
     ecs_assert(ecs_vector_count(result) == pos, ECS_INTERNAL_ERROR, NULL);
     ecs_assert(pos - count <= 1, ECS_INTERNAL_ERROR, NULL);
+
+    return result;
+}
+
+/** Remove entity from type */
+ecs_type_t ecs_type_remove_intern(
+    ecs_world_t *world,
+    ecs_stage_t *stage,
+    ecs_type_t type,
+    ecs_entity_t e)
+{
+    ecs_assert(world != NULL, ECS_INTERNAL_ERROR, NULL);
+
+    if (!type) {
+        return NULL;
+    }
+
+    uint32_t count = ecs_vector_count(type);
+    ecs_entity_t *new_array = ecs_os_alloca(ecs_entity_t, count);
+    ecs_entity_t *old_array = ecs_vector_first(type);
+    void *new_buffer = new_array;
+
+    ecs_assert(e != 0, ECS_INTERNAL_ERROR, NULL);
+
+    uint32_t i, pos = 0;
+    for (i = 0; i < count; i ++) {
+        ecs_entity_t elem = old_array[i];
+        if (elem != e) {
+            new_array[pos ++] = elem;
+        }
+    }
+
+    ecs_type_t result = ecs_type_find_intern(world, stage, new_buffer, pos);
+    ecs_assert(ecs_vector_count(result) == pos, ECS_INTERNAL_ERROR, NULL);
 
     return result;
 }
@@ -715,6 +757,10 @@ ecs_entity_t ecs_type_contains(
     ecs_entity_t e1 = 0;
     ecs_entity_t *t1_array = ecs_vector_first(type_1);
     ecs_entity_t *t2_array = ecs_vector_first(type_2);
+
+    ecs_assert(t1_array != NULL, ECS_INTERNAL_ERROR, NULL);
+    ecs_assert(t2_array != NULL, ECS_INTERNAL_ERROR, NULL);
+
     uint32_t t1_count = ecs_vector_count(type_1);
     uint32_t t2_count = ecs_vector_count(type_2);
 
@@ -855,13 +901,18 @@ EcsTypeComponent type_from_vec(
 static
 EcsTypeComponent type_from_expr(
     ecs_world_t *world,
+    const char *id,
     const char *expr)
 {
-    ecs_vector_t *vec = ecs_vector_new(&handle_arr_params, 1);
-    ecs_parse_component_expr(world, expr, parse_type_action, &vec);
-    EcsTypeComponent result = type_from_vec(world, vec);
-    ecs_vector_free(vec);
-    return result;
+    if (expr) {
+        ecs_vector_t *vec = ecs_vector_new(&handle_arr_params, 1);
+        ecs_parse_component_expr(world, expr, parse_type_action, id, &vec);
+        EcsTypeComponent result = type_from_vec(world, vec);
+        ecs_vector_free(vec);
+        return result;
+    } else {
+        return (EcsTypeComponent){0, 0};
+    }
 }
 
 /* -- Public API -- */
@@ -873,7 +924,7 @@ ecs_entity_t ecs_new_type(
 {
     assert(world->magic == ECS_WORLD_MAGIC);  
 
-    EcsTypeComponent type = type_from_expr(world, expr);
+    EcsTypeComponent type = type_from_expr(world, id, expr);
     ecs_entity_t result = ecs_lookup(world, id);
 
     if (result) {
@@ -909,7 +960,7 @@ ecs_entity_t ecs_new_prefab(
 {
     ecs_assert(world->magic == ECS_WORLD_MAGIC, ECS_INVALID_PARAMETER, NULL);
    
-    EcsTypeComponent type = type_from_expr(world, expr);
+    EcsTypeComponent type = type_from_expr(world, id, expr);
     type.resolved = ecs_type_merge_intern(
         world, NULL, world->t_prefab, type.resolved, 0);
 
@@ -933,7 +984,7 @@ ecs_entity_t ecs_new_entity(
 {
     ecs_assert(world->magic == ECS_WORLD_MAGIC, ECS_INVALID_PARAMETER, NULL);
    
-    EcsTypeComponent type = type_from_expr(world, expr);
+    EcsTypeComponent type = type_from_expr(world, id, expr);
 
     ecs_entity_t result = ecs_lookup(world, id);
     if (result) {
@@ -1019,7 +1070,7 @@ ecs_type_t ecs_expr_to_type(
     ecs_world_t *world,
     const char *expr)
 {
-    EcsTypeComponent type = type_from_expr(world, expr);
+    EcsTypeComponent type = type_from_expr(world, "<type>", expr);
     return type.resolved;
 }
 
@@ -1030,6 +1081,15 @@ ecs_type_t ecs_type_add(
 {
     ecs_stage_t *stage = ecs_get_stage(&world);
     return ecs_type_add_intern(world, stage, type, e);
+}
+
+ecs_type_t ecs_type_remove(
+    ecs_world_t *world,
+    ecs_type_t type,
+    ecs_entity_t e)
+{
+    ecs_stage_t *stage = ecs_get_stage(&world);
+    return ecs_type_remove_intern(world, stage, type, e);
 }
 
 char* ecs_type_to_expr(
@@ -1088,7 +1148,7 @@ char* ecs_type_to_expr(
 bool ecs_type_match_w_filter(
     ecs_world_t *world,
     ecs_type_t type,
-    ecs_type_filter_t *filter)
+    const ecs_filter_t *filter)
 {
     if (!filter) {
         return true;
@@ -1103,7 +1163,7 @@ bool ecs_type_match_w_filter(
 
         /* Default for include_kind is MatchAll */
         } else if (!ecs_type_contains(world, type, filter->include, 
-            filter->include_kind != EcsMatchAny, false)) 
+            filter->include_kind != EcsMatchAny, true)) 
         {
             return false;
         }
@@ -1128,7 +1188,7 @@ bool ecs_type_match_w_filter(
         
         /* Default for exclude_kind is MatchAny */                
         } else if (ecs_type_contains(world, type, filter->exclude, 
-            filter->exclude_kind == EcsMatchAll, false))
+            filter->exclude_kind == EcsMatchAll, true))
         {
             return false;
         }
