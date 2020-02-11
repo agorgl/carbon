@@ -78,6 +78,7 @@ static void merge_renderer_scenes(renderer_scene* tgt_scn, renderer_scene* src_s
     size_t offs_primitives = tgt_scn->num_primitives;
     size_t offs_meshes     = tgt_scn->num_meshes;
     size_t offs_nodes      = tgt_scn->num_nodes;
+    size_t offs_lights     = tgt_scn->num_lights;
 
     assert(offs_buffers + src_scn->num_buffers < RENDERER_SCENE_MAX_BUFFERS);
     for (size_t i = 0; i < src_scn->num_buffers; ++i) {
@@ -161,6 +162,12 @@ static void merge_renderer_scenes(renderer_scene* tgt_scn, renderer_scene* src_s
             n->mesh += offs_meshes;
         n->transform = mat4_mul_mat4(ptransform, n->transform);
         ++tgt_scn->num_nodes;
+    }
+
+    assert(offs_lights + src_scn->num_lights < RENDERER_SCENE_MAX_LIGHTS);
+    for (size_t i = 0; i < src_scn->num_lights; ++i) {
+        tgt_scn->lights[offs_lights + i] = src_scn->lights[i];
+        ++tgt_scn->num_lights;
     }
 }
 

@@ -43,6 +43,7 @@
 #define RENDERER_SCENE_MAX_PRIMITIVES (16)
 #define RENDERER_SCENE_MAX_MESHES (16)
 #define RENDERER_SCENE_MAX_NODES (16)
+#define RENDERER_SCENE_MAX_LIGHTS (16)
 
 /* Renderer type */
 typedef struct renderer* renderer;
@@ -121,6 +122,17 @@ typedef struct renderer_node {
     mat4 transform;
 } renderer_node;
 
+/* A light contains information about a single light source */
+typedef struct renderer_light {
+    vec3 color;      /* Color of the light source */
+    vec3 position;   /* Position of the light source */
+    float intensity; /* Intensity of the light source */
+    enum {
+        RENDERER_LIGHT_TYPE_DIRECTIONAL,
+        RENDERER_LIGHT_TYPE_POINT,
+    } type;
+} renderer_light;
+
 /* The complete scene */
 typedef struct renderer_scene {
     gfx_buffer         buffers[RENDERER_SCENE_MAX_BUFFERS];
@@ -130,6 +142,7 @@ typedef struct renderer_scene {
     renderer_primitive primitives[RENDERER_SCENE_MAX_PRIMITIVES];
     renderer_mesh      meshes[RENDERER_SCENE_MAX_MESHES];
     renderer_node      nodes[RENDERER_SCENE_MAX_NODES];
+    renderer_light     lights[RENDERER_SCENE_MAX_LIGHTS];
     size_t num_buffers;
     size_t num_images;
     size_t num_pipelines;
@@ -137,6 +150,7 @@ typedef struct renderer_scene {
     size_t num_primitives;
     size_t num_meshes;
     size_t num_nodes;
+    size_t num_lights;
 } renderer_scene;
 
 typedef struct renderer_inputs {
