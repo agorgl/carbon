@@ -135,6 +135,21 @@ int main(int argc, char* argv[])
     ecs_set(world, c2, model, { .resource = sample_model });
     ecs_adopt(world, c2, p);
 
+    /* Create light entity */
+    ECS_ENTITY(world, l, transform, light);
+    ecs_set(world, l, transform, {
+        .pose = {
+            .translation = (vec3){{0.2, 1.0, 0.2}},
+            .scale = (vec3){{0.0, 0.0, 0.0}},
+            .rotation = quat_id()
+        },
+        .dirty = 1
+    });
+    ecs_set(world, l, light, {
+        .color = cct(5500),
+        .intensity = 100000,
+    });
+
     /* Run */
     engine_run(engine);
 
