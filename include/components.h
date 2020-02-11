@@ -54,4 +54,11 @@ typedef struct model {
     rid resource;
 } model;
 
+typedef struct light {
+    /* Normalized color value */
+    vec3 color;
+    /* Intensity value, later multiplied with color */
+    float intensity;
+} light;
+
 #endif /* ! _COMPONENTS_H_ */

@@ -89,6 +89,9 @@ int main(int argc, char* argv[])
     /* Declare model type */
     ecs_entity_t ecs_entity(model) = ecs_lookup(world, "model");
 
+    /* Declare light type */
+    ecs_entity_t ecs_entity(light) = ecs_lookup(world, "light");
+
     /* Create sample model resource */
     rid sample_model = resmngr_model_sample(rmgr);
 

@@ -209,6 +209,7 @@ void ecs_setup_internal(ecs_world_t* world)
     /* Register internal component types */
     ECS_COMPONENT(world, transform);
     ECS_COMPONENT(world, model);
+    ECS_COMPONENT(world, light);
 
     /* Register internal systems */
     ECS_SYSTEM(world, propagate_dirty_flag_system, EcsManual, transform, CONTAINER.transform);
