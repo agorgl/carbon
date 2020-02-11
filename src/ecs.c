@@ -176,7 +176,7 @@ struct pri_params {
     resmngr rm;
 };
 
-static void prepare_renderer_inputs_system(ecs_rows_t* rows)
+static void prepare_renderer_model_inputs_system(ecs_rows_t* rows)
 {
     ECS_COLUMN(rows, transform, tarr, 1);
     ECS_COLUMN(rows, model, marr, 2);
@@ -196,13 +196,39 @@ static void prepare_renderer_inputs_system(ecs_rows_t* rows)
     }
 }
 
+static void prepare_renderer_light_inputs_system(ecs_rows_t* rows)
+{
+    ECS_COLUMN(rows, transform, tarr, 1);
+    ECS_COLUMN(rows, light, larr, 2);
+    struct pri_params* pp = rows->param;
+
+    /* Copy over data */
+    for (uint32_t i = 0; i < rows->count; ++i) {
+        /* Get component ptrs for current entity */
+        transform* t = &tarr[i];
+        light* l = &larr[i];
+        /* Create empty scene with current light */
+        renderer_scene lscn = (renderer_scene){
+            .lights = {
+                [0] = (renderer_light){
+                    .color     = l->color,
+                    .intensity = l->intensity,
+                    .position  = t->pose.translation,
+                },
+            },
+            .num_lights = 1,
+        };
+        /* Merge given scene into render input scene */
+        merge_renderer_scenes(&pp->ri->scene, &lscn, t->world_mat);
+    }
+}
+
 void ecs_prepare_renderer_inputs(ecs_world_t* world, renderer_inputs* ri, resmngr rm)
 {
-    ecs_entity_t prisys = ecs_lookup(world, "prepare_renderer_inputs_system");
-    ecs_run(world, prisys, 0, &(struct pri_params){
-        .ri = ri,
-        .rm = rm
-    });
+    ecs_entity_t primsys = ecs_lookup(world, "prepare_renderer_model_inputs_system");
+    ecs_entity_t prilsys = ecs_lookup(world, "prepare_renderer_light_inputs_system");
+    ecs_run(world, primsys, 0, &(struct pri_params){ .ri = ri, .rm = rm });
+    ecs_run(world, prilsys, 0, &(struct pri_params){ .ri = ri, .rm = rm });
 }
 
 void ecs_free_render_inputs(ecs_world_t* world, renderer_inputs* ri)
@@ -222,6 +248,7 @@ void ecs_setup_internal(ecs_world_t* world)
     ECS_SYSTEM(world, propagate_dirty_flag_system, EcsManual, transform, CONTAINER.transform);
     ECS_SYSTEM(world, transform_add_system, EcsOnAdd, transform);
     ECS_SYSTEM(world, transform_system, EcsOnUpdate, transform, CASCADE.transform, .propagate_dirty_flag_system);
-    ECS_SYSTEM(world, prepare_renderer_inputs_system, EcsManual, transform, model);
+    ECS_SYSTEM(world, prepare_renderer_model_inputs_system, EcsManual, transform, model);
+    ECS_SYSTEM(world, prepare_renderer_light_inputs_system, EcsManual, transform, light);
     ECS_SYSTEM(world, model_add_system, EcsOnAdd, model);
 }
