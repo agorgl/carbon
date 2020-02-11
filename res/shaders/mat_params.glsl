@@ -1,6 +1,10 @@
 #include <inc/color>
 
 uniform vec3 view_pos;
+
+uniform vec3 light_pos;
+uniform vec4 light_col;
+
 uniform vec4 bcolor_val;
 uniform vec2 mtlrgn_val;
 

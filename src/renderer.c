@@ -4,6 +4,7 @@
 #include "linmath.h"
 #include "gfx.h"
 #include "shaders.h"
+#include "exposure.h"
 
 typedef struct renderer {
     renderer_params params;
@@ -22,6 +23,8 @@ typedef struct {
 
 typedef struct {
     vec3 view_pos;
+    vec3 light_pos;
+    vec4 light_col;
     vec4 bcolor_val;
     vec2 mtlrgn_val;
     float has_bcolor_map;
@@ -66,61 +69,28 @@ renderer renderer_create(renderer_params* params)
         .vs.uniform_blocks[0] = {
             .size = sizeof(vs_params_t),
             .uniforms = {
-                [0] = {
-                    .name = "modl",
-                    .type = GFX_UNIFORMTYPE_MAT4
-                },
-                [1] = {
-                    .name = "view",
-                    .type = GFX_UNIFORMTYPE_MAT4
-                },
-                [2] = {
-                    .name = "proj",
-                    .type = GFX_UNIFORMTYPE_MAT4
-                }
+                [0] = { .name = "modl", .type = GFX_UNIFORMTYPE_MAT4 },
+                [1] = { .name = "view", .type = GFX_UNIFORMTYPE_MAT4 },
+                [2] = { .name = "proj", .type = GFX_UNIFORMTYPE_MAT4 }
             }
         },
         .fs.uniform_blocks[0] = {
             .size = sizeof(fs_params_t),
             .uniforms = {
-                [0] = {
-                    .name = "view_pos",
-                    .type = GFX_UNIFORMTYPE_FLOAT3,
-                },
-                [1] = {
-                    .name = "bcolor_val",
-                    .type = GFX_UNIFORMTYPE_FLOAT4,
-                },
-                [2] = {
-                    .name = "mtlrgn_val",
-                    .type = GFX_UNIFORMTYPE_FLOAT2,
-                },
-                [3] = {
-                    .name = "has_bcolor_map",
-                    .type = GFX_UNIFORMTYPE_FLOAT,
-                },
-                [4] = {
-                    .name = "has_normal_map",
-                    .type = GFX_UNIFORMTYPE_FLOAT,
-                },
-                [5] = {
-                    .name = "has_mtlrgn_map",
-                    .type = GFX_UNIFORMTYPE_FLOAT,
-                },
+                [0] = { .name = "view_pos",       .type = GFX_UNIFORMTYPE_FLOAT3 },
+                [1] = { .name = "light_pos",      .type = GFX_UNIFORMTYPE_FLOAT3 },
+                [2] = { .name = "light_col",      .type = GFX_UNIFORMTYPE_FLOAT4 },
+                [3] = { .name = "bcolor_val",     .type = GFX_UNIFORMTYPE_FLOAT4 },
+                [4] = { .name = "mtlrgn_val",     .type = GFX_UNIFORMTYPE_FLOAT2 },
+                [5] = { .name = "has_bcolor_map", .type = GFX_UNIFORMTYPE_FLOAT },
+                [6] = { .name = "has_normal_map", .type = GFX_UNIFORMTYPE_FLOAT },
+                [7] = { .name = "has_mtlrgn_map", .type = GFX_UNIFORMTYPE_FLOAT },
             }
         },
         .fs.images = {
-            [0] = {
-                .name = "bcolor_map",
-                .type = GFX_IMAGETYPE_2D
-            },
-            [1] = {
-                .name = "normal_map",
-                .type = GFX_IMAGETYPE_2D
-            },
-            [2] = {
-                .name = "mtlrgn_map",
-                .type = GFX_IMAGETYPE_2D
+            [0] = { .name = "bcolor_map", .type = GFX_IMAGETYPE_2D },
+            [1] = { .name = "normal_map", .type = GFX_IMAGETYPE_2D },
+            [2] = { .name = "mtlrgn_map", .type = GFX_IMAGETYPE_2D
             },
         },
         .vs.source = static_vs->source,
@@ -189,7 +159,17 @@ void renderer_frame(renderer r, renderer_inputs ri)
     /* View-projection matrix */
     mat4 proj = mat4_perspective(radians(60.0f), 0.01f, 1000.0f, (float)r->params.width/(float)r->params.height);
     mat4 view = ri.view;
+
+    /* Camera params */
+    const float ev100 = 15.0;
     vec3 vpos = vpos_from_matrix(view);
+    float exposure = exposure_from_ev100(ev100);
+
+    /* Light params */
+    renderer_light* rl = &rs->lights[0];  /* TODO: Support multiple lights */
+    float pei = rl->intensity * exposure; /* Pre-exposed intensity */
+    vec3 lpos = rl->position;
+    vec4 lcol = (vec4){{rl->color.r, rl->color.g, rl->color.b, pei}};
 
     /*
      * Default pass
@@ -258,6 +238,8 @@ void renderer_frame(renderer r, renderer_inputs ri)
             };
             fs_params_t fs_params = {
                 .view_pos       = vpos,
+                .light_pos      = lpos,
+                .light_col      = lcol,
                 .bcolor_val     = bcolor_val,
                 .mtlrgn_val     = mtlrgn_val,
                 .has_bcolor_map = has_bcolor_map,
