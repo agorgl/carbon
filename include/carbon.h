@@ -37,6 +37,8 @@
 #include "linmath.h"
 #include "gfx.h"
 #include "components.h"
+#include "exposure.h"
+#include "color.h"
 
 void carbon_setup();
 
