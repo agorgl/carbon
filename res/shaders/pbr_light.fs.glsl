@@ -1,7 +1,8 @@
 #version 330
 #include <mat_params>
-out vec4 fcolor;
+#include <inc/tonemap>
 
+out vec4 fcolor;
 in vec3 vpos;
 in vec2 vtco;
 in mat3 vtbn;
