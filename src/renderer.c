@@ -152,14 +152,8 @@ static vec3 vpos_from_matrix(mat4 view)
     return view_pos;
 }
 
-void renderer_frame(renderer r, renderer_inputs ri)
+static void render_scene(renderer r, renderer_scene* rs, mat4 view, mat4 proj)
 {
-    renderer_scene* rs = &ri.scene;
-
-    /* View-projection matrix */
-    mat4 proj = mat4_perspective(radians(60.0f), 0.01f, 1000.0f, (float)r->params.width/(float)r->params.height);
-    mat4 view = ri.view;
-
     /* Camera params */
     const float ev100 = 15.0;
     vec3 vpos = vpos_from_matrix(view);
@@ -171,17 +165,7 @@ void renderer_frame(renderer r, renderer_inputs ri)
     vec3 lpos = rl->position;
     vec4 lcol = (vec4){{rl->color.r, rl->color.g, rl->color.b, pei}};
 
-    /*
-     * Default pass
-     */
-
-    /* Pass action for default pass, clearing to black */
-    gfx_begin_default_pass(&(gfx_pass_action){
-        .colors[0] = {
-            .action = GFX_ACTION_CLEAR,
-            .val = { 0.0f, 0.0f, 0.0f, 1.0f }
-        }
-    }, r->params.width, r->params.height);
+    /* Render all primitives for all nodes in the scene */
     gfx_apply_pipeline(r->default_pip);
     for (size_t i = 0; i < rs->num_nodes; ++i) {
         renderer_node* rn = &rs->nodes[i];
@@ -252,6 +236,26 @@ void renderer_frame(renderer r, renderer_inputs ri)
             gfx_draw(rp->base_element, rp->num_elements, 1);
         }
     }
+}
+
+void renderer_frame(renderer r, renderer_inputs ri)
+{
+    /*
+     * Default pass
+     */
+
+    /* View-projection matrix */
+    mat4 view = ri.view;
+    mat4 proj = mat4_perspective(radians(60.0f), 0.01f, 1000.0f, (float)r->params.width/(float)r->params.height);
+
+    /* Pass action for default pass, clearing to black */
+    gfx_begin_default_pass(&(gfx_pass_action){
+        .colors[0] = {
+            .action = GFX_ACTION_CLEAR,
+            .val = { 0.0f, 0.0f, 0.0f, 1.0f }
+        }
+    }, r->params.width, r->params.height);
+    render_scene(r, &ri.scene, view, proj);
     gfx_end_pass();
 
     /* Commit everything */
