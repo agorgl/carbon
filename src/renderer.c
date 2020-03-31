@@ -90,8 +90,7 @@ renderer renderer_create(renderer_params* params)
         .fs.images = {
             [0] = { .name = "bcolor_map", .type = GFX_IMAGETYPE_2D },
             [1] = { .name = "normal_map", .type = GFX_IMAGETYPE_2D },
-            [2] = { .name = "mtlrgn_map", .type = GFX_IMAGETYPE_2D
-            },
+            [2] = { .name = "mtlrgn_map", .type = GFX_IMAGETYPE_2D },
         },
         .vs.source = static_vs->source,
         .fs.source = direct_fs->source,
