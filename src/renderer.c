@@ -21,11 +21,13 @@ typedef struct renderer {
     gfx_image probe_color_img;
     gfx_image probe_depth_img;
     gfx_pass probe_cubemap_pass[GFX_CUBEFACE_NUM];
+    gfx_pipeline probe_trans_pip;
     /* Debug resources */
     gfx_shader probe_debug_shd;
     gfx_pipeline probe_debug_pip;
     /* Misc resources */
     gfx_image fallback_tex;
+    gfx_buffer quad_vbuf;
     gfx_buffer sphere_vbuf;
     gfx_buffer sphere_ibuf;
     size_t sphere_num_elem;
@@ -75,6 +77,8 @@ renderer renderer_create(renderer_params* params)
     shader_desc direct_fs = shader_fetch("pbr_light.fs");
     shader_desc prbdbg_vs = shader_fetch("probe_dbg.vs");
     shader_desc prbdbg_fs = shader_fetch("probe_dbg.fs");
+    shader_desc fullscreen_vs = shader_fetch("fullscreen.vs");
+    shader_desc cubetoocta_fs = shader_fetch("cubetoocta.fs");
 
     /* Shader for the default pass */
     gfx_shader default_shd = gfx_make_shader(&(gfx_shader_desc){
@@ -133,7 +137,18 @@ renderer renderer_create(renderer_params* params)
         .fs.source = prbdbg_fs->source,
     });
 
+    /* Shader for transforming cubemap to octahedral */
+    gfx_shader probe_trans_shd = gfx_make_shader(&(gfx_shader_desc){
+        .fs.images = {
+            [0] = { .name = "probe", .type = GFX_IMAGETYPE_CUBE },
+        },
+        .vs.source = fullscreen_vs->source,
+        .fs.source = cubetoocta_fs->source,
+    });
+
     /* Free shader sources */
+    shader_free(fullscreen_vs);
+    shader_free(cubetoocta_fs);
     shader_free(prbdbg_vs);
     shader_free(prbdbg_fs);
     shader_free(static_vs);
@@ -185,6 +200,16 @@ renderer renderer_create(renderer_params* params)
         }
     });
 
+    /* Pipeline object for the cube to octahedral map pass */
+    gfx_pipeline probe_trans_pip = gfx_make_pipeline(&(gfx_pipeline_desc){
+        .layout = {
+            .attrs = {
+                [0] = { .format = GFX_VERTEXFORMAT_FLOAT3 }, /* position */
+            }
+        },
+        .shader = probe_trans_shd,
+    });
+
     /* Probe cubemap passes render targets */
     gfx_image probe_color_img = gfx_make_image(&(gfx_image_desc){
         .type          = GFX_IMAGETYPE_CUBE,
@@ -229,6 +254,18 @@ renderer renderer_create(renderer_params* params)
         }
     });
 
+    /* Internal quad geometry */
+    float quad_verts[] = {
+        -0.5f,  0.5f, 0.5f,
+         0.5f,  0.5f, 0.5f,
+         0.5f, -0.5f, 0.5f,
+        -0.5f, -0.5f, 0.5f,
+    };
+    gfx_buffer quad_vbuf = gfx_make_buffer(&(gfx_buffer_desc){
+        .size = sizeof(quad_verts),
+        .content = quad_verts
+    });
+
     /* Internal sphere geometry */
     void* sph_verts; uint32_t* sph_indcs; size_t sph_num_verts, sph_num_indcs;
     generate_uv_sphere(&sph_verts, &sph_num_verts, &sph_indcs, &sph_num_indcs, 0.25f, 32, 32);
@@ -250,11 +287,13 @@ renderer renderer_create(renderer_params* params)
     r->default_shd     = default_shd;
     r->default_pip     = default_pip;
     r->fallback_tex    = fallback_tex;
+    r->quad_vbuf       = quad_vbuf;
     r->sphere_vbuf     = sphere_vbuf;
     r->sphere_ibuf     = sphere_ibuf;
     r->sphere_num_elem = sph_num_indcs;
     r->probe_color_img = probe_color_img;
     r->probe_depth_img = probe_depth_img;
+    r->probe_trans_pip = probe_trans_pip;
     r->probe_debug_shd = probe_debug_shd;
     r->probe_debug_pip = probe_debug_pip;
     memcpy(&r->probe_cubemap_pass, probe_cubemap_pass, sizeof(r->probe_cubemap_pass));
@@ -401,6 +440,26 @@ static void render_probe_visualization(renderer r, vec3 probe_pos, mat4 view, ma
     gfx_end_pass();
 }
 
+static void render_probe_octa_visualization(renderer r, int probe_idx)
+{
+    /* Render debug view to default framebuffer */
+    const int x = PROBE_CUBEMAP_RESOLUTION * probe_idx;
+    const int y = 0;
+    gfx_begin_default_pass(&(gfx_pass_action){
+        .colors[0].action = GFX_ACTION_LOAD,
+        .depth.action = GFX_ACTION_LOAD
+    }, r->params.width, r->params.height);
+    gfx_apply_pipeline(r->probe_trans_pip);
+    gfx_apply_bindings(&(gfx_bindings){
+        .vertex_buffers[0] = r->quad_vbuf,
+        .fs_images = { [0] = r->probe_color_img }
+    });
+    gfx_apply_viewport(x, y, PROBE_CUBEMAP_RESOLUTION, PROBE_CUBEMAP_RESOLUTION, 0);
+    gfx_apply_scissor_rect(x, y, PROBE_CUBEMAP_RESOLUTION, PROBE_CUBEMAP_RESOLUTION, 0);
+    gfx_draw(0, 3, 1);
+    gfx_end_pass();
+}
+
 void renderer_frame(renderer r, renderer_inputs ri)
 {
     /*
@@ -435,6 +494,7 @@ void renderer_frame(renderer r, renderer_inputs ri)
         vec3 probe_pos = probe_positions[i];
         render_probe_cubemap(r, rs, probe_pos);
         render_probe_visualization(r, probe_pos, view, proj);
+        render_probe_octa_visualization(r, i);
     }
 
     /* Commit everything */
