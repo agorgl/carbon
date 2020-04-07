@@ -63,7 +63,7 @@ void camera_setdir(camera* cam, vec3 dir)
 {
     dir = vec3_normalize(dir);
     cam->eul.x = degrees(asin(-dir.y));
-    cam->eul.y = degrees(atan2f(dir.x, dir.z));
+    cam->eul.y = degrees(atan2f(dir.x, -dir.z));
 }
 
 void camera_update(camera* cam, float dt)
