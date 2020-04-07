@@ -38,7 +38,7 @@ void main()
 
     color = tonemap(color);
     color = rgb_to_srgb(color);
-    color = mix(normal, color, has_bcolor_map);
+    color = mix(vpos, color, has_bcolor_map);
 
     fcolor = vec4(color, 1.0);
 }
