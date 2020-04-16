@@ -310,7 +310,7 @@ static vec3 vpos_from_matrix(mat4 view)
 static void render_scene(renderer r, renderer_scene* rs, mat4 view, mat4 proj)
 {
     /* Camera params */
-    const float ev100 = 15.0;
+    const float ev100 = 14.5;
     vec3 vpos = vpos_from_matrix(view);
     float exposure = exposure_from_ev100(ev100);
 

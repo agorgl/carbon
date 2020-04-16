@@ -147,7 +147,7 @@ int main(int argc, char* argv[])
     });
     ecs_set(world, l, light, {
         .color = cct(5500),
-        .intensity = 100000,
+        .intensity = 120000,
     });
 
     /* Run */
