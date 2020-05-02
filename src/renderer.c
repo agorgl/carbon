@@ -8,6 +8,7 @@
 #include "exposure.h"
 #include "geometry.h"
 
+#define LIGHT_SHDWMAP_RESOLUTION (1024)
 #define PROBE_CUBEMAP_RESOLUTION (128)
 
 typedef struct renderer {
@@ -17,6 +18,10 @@ typedef struct renderer {
     gfx_image depth_img;
     gfx_shader default_shd;
     gfx_pipeline default_pip;
+    /* Shadow pass */
+    gfx_image shadow_img;
+    gfx_pipeline shadow_pip;
+    gfx_pass shadow_pass;
     /* Probe pass */
     gfx_image probe_color_img;
     gfx_image probe_depth_img;
@@ -48,6 +53,7 @@ typedef struct {
     float has_bcolor_map;
     float has_normal_map;
     float has_mtlrgn_map;
+    mat4 lightsp_mat;
 } fs_params_t;
 
 renderer renderer_create(renderer_params* params)
@@ -72,9 +78,27 @@ renderer renderer_create(renderer_params* params)
     img_desc.pixel_format = GFX_PIXELFORMAT_DEPTH;
     gfx_image depth_img = gfx_make_image(&img_desc);
 
+    /* Create shadowmap render target images */
+    gfx_image_desc shadow_img_desc = (gfx_image_desc){
+        .render_target = 1,
+        .width  = LIGHT_SHDWMAP_RESOLUTION,
+        .height = LIGHT_SHDWMAP_RESOLUTION,
+        .min_filter = GFX_FILTER_LINEAR,
+        .mag_filter = GFX_FILTER_LINEAR,
+        .wrap_u = GFX_WRAP_CLAMP_TO_BORDER,
+        .wrap_v = GFX_WRAP_CLAMP_TO_BORDER,
+        .pixel_format = GFX_PIXELFORMAT_RGBA32F,
+        .sample_count = 1
+    };
+    gfx_image shadow_color_img = gfx_make_image(&shadow_img_desc);
+    shadow_img_desc.pixel_format = GFX_PIXELFORMAT_DEPTH_STENCIL;
+    gfx_image shadow_depth_img = gfx_make_image(&shadow_img_desc);
+
     /* Load shader sources */
     shader_desc static_vs = shader_fetch("primitive.vs");
     shader_desc direct_fs = shader_fetch("pbr_light.fs");
+    shader_desc shadow_vs = shader_fetch("shadowmap.vs");
+    shader_desc shadow_fs = shader_fetch("shadowmap.fs");
     shader_desc prbdbg_vs = shader_fetch("probe_dbg.vs");
     shader_desc prbdbg_fs = shader_fetch("probe_dbg.fs");
     shader_desc fullscreen_vs = shader_fetch("fullscreen.vs");
@@ -107,15 +131,34 @@ renderer renderer_create(renderer_params* params)
                 [5] = { .name = "has_bcolor_map", .type = GFX_UNIFORMTYPE_FLOAT },
                 [6] = { .name = "has_normal_map", .type = GFX_UNIFORMTYPE_FLOAT },
                 [7] = { .name = "has_mtlrgn_map", .type = GFX_UNIFORMTYPE_FLOAT },
+                [8] = { .name = "lightsp_mat",    .type = GFX_UNIFORMTYPE_MAT4 },
             }
         },
         .fs.images = {
             [0] = { .name = "bcolor_map", .type = GFX_IMAGETYPE_2D },
             [1] = { .name = "normal_map", .type = GFX_IMAGETYPE_2D },
             [2] = { .name = "mtlrgn_map", .type = GFX_IMAGETYPE_2D },
+            [3] = { .name = "shadow_map", .type = GFX_IMAGETYPE_2D },
         },
         .vs.source = static_vs->source,
         .fs.source = direct_fs->source,
+    });
+
+    /* Shader for the shadow pass */
+    gfx_shader shadow_shd = gfx_make_shader(&(gfx_shader_desc){
+        .attrs = {
+            [0].name = "apos",
+        },
+        .vs.uniform_blocks[0] = {
+            .size = sizeof(vs_params_t),
+            .uniforms = {
+                [0] = { .name = "modl", .type = GFX_UNIFORMTYPE_MAT4 },
+                [1] = { .name = "view", .type = GFX_UNIFORMTYPE_MAT4 },
+                [2] = { .name = "proj", .type = GFX_UNIFORMTYPE_MAT4 }
+            }
+        },
+        .vs.source = shadow_vs->source,
+        .fs.source = shadow_fs->source,
     });
 
     /* Shader for the probe debug view */
@@ -151,6 +194,8 @@ renderer renderer_create(renderer_params* params)
     shader_free(cubetoocta_fs);
     shader_free(prbdbg_vs);
     shader_free(prbdbg_fs);
+    shader_free(shadow_vs);
+    shader_free(shadow_fs);
     shader_free(static_vs);
     shader_free(direct_fs);
 
@@ -175,6 +220,40 @@ renderer renderer_create(renderer_params* params)
             .cull_mode = GFX_CULLMODE_BACK,
             .face_winding = GFX_FACEWINDING_CCW,
             .sample_count = sample_count
+        }
+    });
+
+    /* Pipeline object for the shadowmap pass */
+    gfx_pipeline shadow_pip = gfx_make_pipeline(&(gfx_pipeline_desc){
+        .layout = {
+            .buffers = { [0] = { .stride = (3 + 3 + 2 + 4) * sizeof(float)} },
+            .attrs = {
+                [0] = { .format = GFX_VERTEXFORMAT_FLOAT3 }, /* position */
+            }
+        },
+        .shader = shadow_shd,
+        .index_type = GFX_INDEXTYPE_UINT32,
+        .depth_stencil = {
+            .depth_compare_func = GFX_COMPAREFUNC_LESS_EQUAL,
+            .depth_write_enabled = true,
+        },
+        .blend = {
+            .color_format = GFX_PIXELFORMAT_RGBA32F,
+        },
+        .rasterizer = {
+            .cull_mode = GFX_CULLMODE_FRONT,
+            .face_winding = GFX_FACEWINDING_CCW,
+            .sample_count = 1
+        }
+    });
+
+    /* Shadowmap pass */
+    gfx_pass shadow_pass = gfx_make_pass(&(gfx_pass_desc){
+        .color_attachments[0] = {
+            .image = shadow_color_img,
+        },
+        .depth_stencil_attachment = {
+            .image = shadow_depth_img,
         }
     });
 
@@ -286,6 +365,9 @@ renderer renderer_create(renderer_params* params)
     r->depth_img       = depth_img;
     r->default_shd     = default_shd;
     r->default_pip     = default_pip;
+    r->shadow_img      = shadow_color_img;
+    r->shadow_pip      = shadow_pip;
+    r->shadow_pass     = shadow_pass;
     r->fallback_tex    = fallback_tex;
     r->quad_vbuf       = quad_vbuf;
     r->sphere_vbuf     = sphere_vbuf;
@@ -307,6 +389,13 @@ static vec3 vpos_from_matrix(mat4 view)
     return view_pos;
 }
 
+static void light_space_matrices(renderer_light* l, mat4* proj, mat4* view)
+{
+    vec3 ldir = vec3_normalize(l->position);
+    *proj = mat4_orthographic(-20.0f, 20.0f, -20.0f, 20.0f, 100.0f, -10.0f);
+    *view = mat4_view_look_at(vec3_mul(ldir, -1.0f), vec3_zero(), vec3_up());
+}
+
 static void render_scene(renderer r, renderer_scene* rs, mat4 view, mat4 proj)
 {
     /* Camera params */
@@ -319,6 +408,12 @@ static void render_scene(renderer r, renderer_scene* rs, mat4 view, mat4 proj)
     float pei = rl->intensity * exposure; /* Pre-exposed intensity */
     vec3 lpos = rl->position;
     vec4 lcol = (vec4){{rl->color.r, rl->color.g, rl->color.b, pei}};
+
+    /* Shadow params */
+    mat4 lproj, lview;
+    light_space_matrices(rl, &lproj, &lview);
+    gfx_image shadow_map_img = r->shadow_img;
+    mat4 lightsp_mat = mat4_mul_mat4(lproj, lview);
 
     /* Render all primitives for all nodes in the scene */
     gfx_apply_pipeline(r->default_pip);
@@ -367,6 +462,7 @@ static void render_scene(renderer r, renderer_scene* rs, mat4 view, mat4 proj)
                     [0] = bcolor_map_img,
                     [1] = normal_map_img,
                     [2] = mtlrgn_map_img,
+                    [3] = shadow_map_img,
                 }
             });
             /* Apply vertex and fragment shader uniforms */
@@ -384,6 +480,7 @@ static void render_scene(renderer r, renderer_scene* rs, mat4 view, mat4 proj)
                 .has_bcolor_map = has_bcolor_map,
                 .has_normal_map = has_normal_map,
                 .has_mtlrgn_map = has_mtlrgn_map,
+                .lightsp_mat    = lightsp_mat,
             };
             gfx_apply_uniforms(GFX_SHADERSTAGE_VS, 0, &vs_params, sizeof(vs_params));
             gfx_apply_uniforms(GFX_SHADERSTAGE_FS, 0, &fs_params, sizeof(fs_params));
@@ -391,6 +488,50 @@ static void render_scene(renderer r, renderer_scene* rs, mat4 view, mat4 proj)
             gfx_draw(rp->base_element, rp->num_elements, 1);
         }
     }
+}
+
+static void render_shadow_map(renderer r, renderer_scene* rs)
+{
+    /* Pick directional light */
+    renderer_light* rl = &rs->lights[0]; /* TODO */
+
+    /* Construct light view and projection matrices */
+    mat4 proj, view;
+    light_space_matrices(rl, &proj, &view);
+
+    /* Render all primitives for all nodes in the scene */
+    gfx_begin_pass(r->shadow_pass, &(gfx_pass_action){
+        .colors[0] = {
+            .action = GFX_ACTION_CLEAR,
+            .val = { 0.0f, 0.0f, 0.0f, 1.0f }
+        }
+    });
+    gfx_apply_pipeline(r->shadow_pip);
+    for (size_t i = 0; i < rs->num_nodes; ++i) {
+        renderer_node* rn = &rs->nodes[i];
+        renderer_mesh* rm = &rs->meshes[rn->mesh];
+        for (size_t j = 0; j < rm->num_primitives; ++j) {
+            /* Fetch geometry bindings */
+            renderer_primitive* rp = &rs->primitives[rm->first_primitive + j];
+            gfx_buffer vbuf = rs->buffers[rp->vertex_buffer];
+            gfx_buffer ibuf = rs->buffers[rp->index_buffer];
+            /* Apply the fetched bindings */
+            gfx_apply_bindings(&(gfx_bindings){
+                .vertex_buffers[0] = vbuf,
+                .index_buffer      = ibuf,
+            });
+            /* Apply vertex and fragment shader uniforms */
+            vs_params_t vs_params = {
+                .modl = rn->transform,
+                .view = view,
+                .proj = proj,
+            };
+            gfx_apply_uniforms(GFX_SHADERSTAGE_VS, 0, &vs_params, sizeof(vs_params));
+            /* Perform the draw call */
+            gfx_draw(rp->base_element, rp->num_elements, 1);
+        }
+    }
+    gfx_end_pass();
 }
 
 static void render_probe_cubemap(renderer r, renderer_scene* rs, vec3 probe_pos)
@@ -480,6 +621,11 @@ void renderer_frame(renderer r, renderer_inputs ri)
     }, r->params.width, r->params.height);
     render_scene(r, rs, view, proj);
     gfx_end_pass();
+
+    /*
+     * Shadow pass
+     */
+    render_shadow_map(r, rs);
 
     /*
      * Probes pass

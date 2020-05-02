@@ -36,6 +36,9 @@ void main()
     get_pixel_params(mat, pixel);
     apply_directional_light(mat, pixel, light, view, color);
 
+    float shad = shadow(vpos) * 0.9 + 0.1;
+    color = color * shad;
+
     color = tonemap(color);
     color = rgb_to_srgb(color);
     color = mix(vpos, color, has_bcolor_map);

@@ -1,4 +1,6 @@
+#include <inc/common>
 #include <inc/color>
+#include <inc/shadow>
 
 uniform vec3 view_pos;
 
@@ -14,6 +16,9 @@ uniform float has_normal_map;
 uniform sampler2D normal_map;
 uniform float has_mtlrgn_map;
 uniform sampler2D mtlrgn_map;
+
+uniform sampler2D shadow_map;
+uniform mat4 lightsp_mat;
 
 vec4 bcolor(vec2 vtco)
 {
@@ -41,4 +46,29 @@ vec2 mtlrgn(vec2 vtco)
 {
     vec2 tex_mtlrgn = texture(mtlrgn_map, vtco).gb;
     return mix(vec2(1.0), tex_mtlrgn, has_mtlrgn_map);
+}
+
+bool is_vertex_in_shadow_map(vec3 coord)
+{
+    return coord.z > 0.0
+        && coord.x > 0.0
+        && coord.y > 0.0
+        && coord.x <= 1.0
+        && coord.y <= 1.0;
+}
+
+float shadow(vec3 vpos)
+{
+    // Vertex in light space
+    vec4 ls_pos = lightsp_mat * vec4(vpos, 1.0);
+    // Perform perspective divide
+    vec3 proj_coords = (ls_pos.xyz / ls_pos.w);
+    // Transform to [0,1] range
+    proj_coords = proj_coords * 0.5 + 0.5;
+    // Check if vertex is captured by the shadow map
+    if (!is_vertex_in_shadow_map(proj_coords))
+        return 1.0;
+    // Calculate shadow coefficient
+    float shadow = shadow_visibility(shadow_map, proj_coords);
+    return shadow;
 }
