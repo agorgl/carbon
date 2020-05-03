@@ -20,8 +20,10 @@ typedef struct renderer {
     gfx_pipeline default_pip;
     /* Shadow pass */
     gfx_image shadow_img;
+    gfx_image shadow_blur_img;
     gfx_pipeline shadow_pip;
     gfx_pass shadow_pass;
+    gfx_pass shadow_blur_pass[2];
     /* Probe pass */
     gfx_image probe_color_img;
     gfx_image probe_depth_img;
@@ -32,6 +34,7 @@ typedef struct renderer {
     gfx_pipeline probe_debug_pip;
     /* Misc resources */
     gfx_image fallback_tex;
+    gfx_pipeline tex_blur_pip;
     gfx_buffer quad_vbuf;
     gfx_buffer sphere_vbuf;
     gfx_buffer sphere_ibuf;
@@ -94,6 +97,19 @@ renderer renderer_create(renderer_params* params)
     shadow_img_desc.pixel_format = GFX_PIXELFORMAT_DEPTH_STENCIL;
     gfx_image shadow_depth_img = gfx_make_image(&shadow_img_desc);
 
+    /* Create shadowmap blur render target images */
+    gfx_image shadow_blur_img = gfx_make_image(&(gfx_image_desc){
+        .render_target = 1,
+        .width  = LIGHT_SHDWMAP_RESOLUTION,
+        .height = LIGHT_SHDWMAP_RESOLUTION,
+        .min_filter = GFX_FILTER_LINEAR,
+        .mag_filter = GFX_FILTER_LINEAR,
+        .wrap_u = GFX_WRAP_CLAMP_TO_BORDER,
+        .wrap_v = GFX_WRAP_CLAMP_TO_BORDER,
+        .pixel_format = GFX_PIXELFORMAT_RGBA32F,
+        .sample_count = 1
+    });
+
     /* Load shader sources */
     shader_desc static_vs = shader_fetch("primitive.vs");
     shader_desc direct_fs = shader_fetch("pbr_light.fs");
@@ -103,6 +119,7 @@ renderer renderer_create(renderer_params* params)
     shader_desc prbdbg_fs = shader_fetch("probe_dbg.fs");
     shader_desc fullscreen_vs = shader_fetch("fullscreen.vs");
     shader_desc cubetoocta_fs = shader_fetch("cubetoocta.fs");
+    shader_desc texture_blur_fs = shader_fetch("texture_blur.fs");
 
     /* Shader for the default pass */
     gfx_shader default_shd = gfx_make_shader(&(gfx_shader_desc){
@@ -161,6 +178,21 @@ renderer renderer_create(renderer_params* params)
         .fs.source = shadow_fs->source,
     });
 
+    /* Shader for texture blurring */
+    gfx_shader texture_blur_shd = gfx_make_shader(&(gfx_shader_desc){
+        .fs.uniform_blocks[0] = {
+            .size = sizeof(float),
+            .uniforms = {
+                [0] = { .name = "dir", .type = GFX_UNIFORMTYPE_FLOAT },
+            }
+        },
+        .fs.images = {
+            [0] = { .name = "tex", .type = GFX_IMAGETYPE_2D },
+        },
+        .vs.source = fullscreen_vs->source,
+        .fs.source = texture_blur_fs->source,
+    });
+
     /* Shader for the probe debug view */
     gfx_shader probe_debug_shd = gfx_make_shader(&(gfx_shader_desc){
         .attrs = {
@@ -190,6 +222,7 @@ renderer renderer_create(renderer_params* params)
     });
 
     /* Free shader sources */
+    shader_free(texture_blur_fs);
     shader_free(fullscreen_vs);
     shader_free(cubetoocta_fs);
     shader_free(prbdbg_vs);
@@ -247,6 +280,24 @@ renderer renderer_create(renderer_params* params)
         }
     });
 
+    /* Pipeline object for texture blurring passes */
+    gfx_pipeline tex_blur_pip = gfx_make_pipeline(&(gfx_pipeline_desc){
+        .layout = {
+            .buffers = { [0] = { .stride = (3 + 3 + 2 + 4) * sizeof(float)} },
+            .attrs = {
+                [0] = { .format = GFX_VERTEXFORMAT_FLOAT3 }, /* position */
+            }
+        },
+        .shader = texture_blur_shd,
+        .depth_stencil = {
+            .depth_write_enabled = false,
+        },
+        .blend = {
+            .color_format = GFX_PIXELFORMAT_RGBA32F,
+            .depth_format = GFX_PIXELFORMAT_NONE,
+        },
+    });
+
     /* Shadowmap pass */
     gfx_pass shadow_pass = gfx_make_pass(&(gfx_pass_desc){
         .color_attachments[0] = {
@@ -256,6 +307,20 @@ renderer renderer_create(renderer_params* params)
             .image = shadow_depth_img,
         }
     });
+
+    /* Shadowmap blur pass */
+    gfx_pass shadow_blur_pass[2] = {
+        [0] = gfx_make_pass(&(gfx_pass_desc){
+            .color_attachments[0] = {
+                .image = shadow_blur_img,
+            },
+        }),
+        [1] = gfx_make_pass(&(gfx_pass_desc){
+            .color_attachments[0] = {
+                .image = shadow_color_img,
+            },
+        }),
+    };
 
     /* Pipeline object for the probe debug pass */
     gfx_pipeline probe_debug_pip = gfx_make_pipeline(&(gfx_pipeline_desc){
@@ -366,9 +431,11 @@ renderer renderer_create(renderer_params* params)
     r->default_shd     = default_shd;
     r->default_pip     = default_pip;
     r->shadow_img      = shadow_color_img;
+    r->shadow_blur_img = shadow_blur_img;
     r->shadow_pip      = shadow_pip;
     r->shadow_pass     = shadow_pass;
     r->fallback_tex    = fallback_tex;
+    r->tex_blur_pip    = tex_blur_pip;
     r->quad_vbuf       = quad_vbuf;
     r->sphere_vbuf     = sphere_vbuf;
     r->sphere_ibuf     = sphere_ibuf;
@@ -378,6 +445,7 @@ renderer renderer_create(renderer_params* params)
     r->probe_trans_pip = probe_trans_pip;
     r->probe_debug_shd = probe_debug_shd;
     r->probe_debug_pip = probe_debug_pip;
+    memcpy(&r->shadow_blur_pass, shadow_blur_pass, sizeof(r->shadow_blur_pass));
     memcpy(&r->probe_cubemap_pass, probe_cubemap_pass, sizeof(r->probe_cubemap_pass));
     return r;
 }
@@ -532,6 +600,28 @@ static void render_shadow_map(renderer r, renderer_scene* rs)
         }
     }
     gfx_end_pass();
+
+    /* Prefilter shadowmap */
+    gfx_image blur_inputs[] = {r->shadow_img, r->shadow_blur_img};
+    for (size_t i = 0; i < 2; ++i) {
+        const float dir = i;
+        gfx_image input = blur_inputs[i];
+        gfx_pass pass = r->shadow_blur_pass[i];
+        gfx_begin_pass(pass, &(gfx_pass_action){
+            .colors[0] = {
+                .action = GFX_ACTION_CLEAR,
+                .val = { 0.0f, 0.0f, 0.0f, 0.0f }
+            }
+        });
+        gfx_apply_pipeline(r->tex_blur_pip);
+        gfx_apply_uniforms(GFX_SHADERSTAGE_FS, 0, &dir, sizeof(dir));
+        gfx_apply_bindings(&(gfx_bindings){
+            .vertex_buffers[0] = r->quad_vbuf,
+            .fs_images = { [0] = input }
+        });
+        gfx_draw(0, 3, 1);
+        gfx_end_pass();
+    }
 }
 
 static void render_probe_cubemap(renderer r, renderer_scene* rs, vec3 probe_pos)
