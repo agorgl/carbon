@@ -34,12 +34,12 @@ typedef struct spin {
     float speed;
 } spin;
 
-static void spin_system(ecs_rows_t* rows)
+static void spin_system(ecs_iter_t* it)
 {
-    ECS_COLUMN(rows, transform, tarr, 1);
-    ECS_COLUMN(rows, spin, sarr, 2);
+    transform* tarr = ecs_column(it, transform, 1);
+    spin* sarr = ecs_column(it, spin, 2);
 
-    for (uint32_t i = 0; i < rows->count; ++i) {
+    for (int32_t i = 0; i < it->count; ++i) {
         transform* t = &tarr[i];
         spin* s = &sarr[i];
         t->pose.rotation = quat_mul_quat(
@@ -119,7 +119,7 @@ int main(int argc, char* argv[])
     });
     ecs_set(world, c1, spin, { .speed = 0.1f, });
     ecs_set(world, c1, model, { .resource = sample_model });
-    ecs_adopt(world, c1, p);
+    ecs_add_entity(world, c1, ECS_CHILDOF | p);
 
     /* Create second child entity */
     ECS_ENTITY(world, c2, transform, model);
@@ -133,7 +133,7 @@ int main(int argc, char* argv[])
     });
     ecs_set(world, c2, spin, { .speed = 0.1f, });
     ecs_set(world, c2, model, { .resource = sample_model });
-    ecs_adopt(world, c2, p);
+    ecs_add_entity(world, c2, ECS_CHILDOF | p);
 
     /* Create light entity */
     ECS_ENTITY(world, l, transform, light);

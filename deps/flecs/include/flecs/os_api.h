@@ -9,13 +9,23 @@
 #include <alloca.h>
 #endif
 
+#if defined(_WIN32)
+#define ECS_OS_WINDOWS
+#elif defined(__linux__)
+#define ECS_OS_LINUX
+#elif defined(__APPLE__) && defined(__MACH__)
+#define ECS_OS_DARWIN
+#else
+/* Unknown OS */
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 typedef struct ecs_time_t {
     int32_t sec;
-    uint32_t nanosec;
+    int32_t nanosec;
 } ecs_time_t;
 
 /* Allocation counters (not thread safe) */
@@ -49,7 +59,6 @@ void* (*ecs_os_api_realloc_t)(
 
 typedef
 void* (*ecs_os_api_calloc_t)(
-    size_t num,
     size_t size);
 
 typedef
@@ -69,6 +78,12 @@ ecs_os_thread_t (*ecs_os_api_thread_new_t)(
 typedef
 void* (*ecs_os_api_thread_join_t)(
     ecs_os_thread_t thread);
+
+
+/* Atomic increment / decrement */
+typedef
+int (*ecs_os_api_ainc_t)(
+    int32_t *value);
 
 
 /* Mutex */
@@ -113,8 +128,8 @@ void (*ecs_os_api_cond_wait_t)(
 
 typedef 
 void (*ecs_os_api_sleep_t)(
-    uint32_t sec,
-    uint32_t nanosec);
+    int32_t sec,
+    int32_t nanosec);
 
 typedef
 void (*ecs_os_api_get_time_t)(
@@ -146,7 +161,7 @@ void (*ecs_os_api_dlclose_t)(
     ecs_os_dl_t lib);
 
 typedef
-char* (*ecs_os_api_module_to_dl_t)(
+char* (*ecs_os_api_module_to_path_t)(
     const char *module_id);
 
 typedef struct ecs_os_api_t {
@@ -160,6 +175,10 @@ typedef struct ecs_os_api_t {
     /* Threads */
     ecs_os_api_thread_new_t thread_new;
     ecs_os_api_thread_join_t thread_join;
+
+    /* Atomic incremenet / decrement */
+    ecs_os_api_ainc_t ainc;
+    ecs_os_api_ainc_t adec;
 
     /* Mutex */
     ecs_os_api_mutex_new_t mutex_new;
@@ -192,9 +211,13 @@ typedef struct ecs_os_api_t {
     ecs_os_api_dlproc_t dlproc;
     ecs_os_api_dlclose_t dlclose;
 
-    /* Overridable function that translates from a logical module id to the
-     * a shared library filename */
-    ecs_os_api_module_to_dl_t module_to_dl;
+    /* Overridable function that translates from a logical module id to a
+     * shared library filename */
+    ecs_os_api_module_to_path_t module_to_dl;
+
+    /* Overridable function that translates from a logical module id to a
+     * path that contains module-specif resources or assets */
+    ecs_os_api_module_to_path_t module_to_etc;    
 } ecs_os_api_t;
 
 FLECS_EXPORT
@@ -211,20 +234,22 @@ void ecs_os_set_api_defaults(void);
 #define ecs_os_malloc(size) ecs_os_api.malloc(size);
 #define ecs_os_free(ptr) ecs_os_api.free(ptr);
 #define ecs_os_realloc(ptr, size) ecs_os_api.realloc(ptr, size)
-#define ecs_os_calloc(num, size) ecs_os_api.calloc(num, size)
+#define ecs_os_calloc(size) ecs_os_api.calloc(size)
 #define ecs_os_strdup(str) ecs_os_api.strdup(str)
 
 #if defined(_MSC_VER) || defined(__MINGW32__)
-#define ecs_os_alloca(type, count) _alloca(sizeof(type) * (count))
-#define _ecs_os_alloca(size, count) _alloca((size) * (count))
+#define ecs_os_alloca(size) _alloca(size)
 #else
-#define ecs_os_alloca(type, count) alloca(sizeof(type) * (count))
-#define _ecs_os_alloca(size, count) alloca((size) * (count))
+#define ecs_os_alloca(size) alloca(size)
 #endif
 
 /* Threads */
 #define ecs_os_thread_new(callback, param) ecs_os_api.thread_new(callback, param)
 #define ecs_os_thread_join(thread) ecs_os_api.thread_join(thread)
+
+/* Atomic increment / decrement */
+#define ecs_os_ainc(value) ecs_os_api.ainc(value)
+#define ecs_os_adec(value) ecs_os_api.adec(value)
 
 /* Mutex */
 #define ecs_os_mutex_new() ecs_os_api.mutex_new()
@@ -256,12 +281,6 @@ void ecs_os_err(const char *fmt, ...);
 FLECS_EXPORT
 void ecs_os_dbg(const char *fmt, ...);
 
-FLECS_EXPORT
-void ecs_os_enable_dbg(bool enable);
-
-FLECS_EXPORT
-bool ecs_os_dbg_enabled(void);
-
 /* Application termination */
 #define ecs_os_abort() ecs_os_api.abort()
 
@@ -272,6 +291,7 @@ bool ecs_os_dbg_enabled(void);
 
 /* Module id translation */
 #define ecs_os_module_to_dl(lib) ecs_os_api.module_to_dl(lib)
+#define ecs_os_module_to_etc(lib) ecs_os_api.module_to_etc(lib)
 
 /* Sleep with floating point time */
 FLECS_EXPORT

@@ -2,12 +2,17 @@
 #include <components.h>
 #include <string.h>
 
-static void transform_add_system(ecs_rows_t* rows)
-{
-    ECS_COLUMN_COMPONENT(rows, transform, 1);
+static struct {
+    ecs_query_t* prm_query;
+    ecs_query_t* prl_query;
+} ecs_internal;
 
-    for (uint32_t i = 0; i < rows->count; ++i) {
-        ecs_set(rows->world, rows->entities[i], transform, {
+static void transform_add_system(ecs_iter_t* it)
+{
+    ECS_COLUMN_COMPONENT(it, transform, 1);
+
+    for (int32_t i = 0; i < it->count; ++i) {
+        ecs_set(it->world, it->entities[i], transform, {
             .pose = {
                 .scale       = (vec3){{1.0, 1.0, 1.0}},
                 .rotation    = (quat){{0.0, 0.0, 0.0, 1.0}},
@@ -18,54 +23,56 @@ static void transform_add_system(ecs_rows_t* rows)
     }
 }
 
-static void model_add_system(ecs_rows_t* rows)
+static void model_add_system(ecs_iter_t* it)
 {
-    ECS_COLUMN_COMPONENT(rows, model, 1);
+    ECS_COLUMN_COMPONENT(it, model, 1);
 
-    for (uint32_t i = 0; i < rows->count; ++i) {
-        ecs_set(rows->world, rows->entities[i], model, {.resource = RID_INVALID});
+    for (int32_t i = 0; i < it->count; ++i) {
+        ecs_set(it->world, it->entities[i], model, {.resource = RID_INVALID});
     }
 }
 
-static void propagate_dirty_flag_system(ecs_rows_t* rows)
+static void transform_update_subtree(ecs_world_t* world, ecs_entity_t ecs_entity(transform), ecs_entity_t e, transform* t, transform* tpar)
 {
-    transform* tarr = ecs_column(rows, transform, 1);
-    for (uint32_t i = 0; i < rows->count;++i) {
-        transform* t = &tarr[i];
-        t->dirty = 1;
-    }
-}
-
-static void transform_system(ecs_rows_t* rows)
-{
-    ECS_COLUMN(rows, transform, tarr, 1);
-    ECS_COLUMN(rows, transform, parent, 2);
-    ECS_COLUMN_ENTITY(rows, pdflag, 3);
-
     /* Parent matrix */
-    mat4 pm = parent ? parent->local_mat : mat4_id();
+    mat4 pm = tpar ? tpar->world_mat : mat4_id();
 
-    for (uint32_t i = 0; i < rows->count; ++i) {
+    /* Update entity */
+    if (t->dirty) {
+        t->local_mat = mat4_world(
+            t->pose.translation,
+            t->pose.scale,
+            t->pose.rotation
+        );
+    }
+    t->world_mat = mat4_mul_mat4(pm, t->local_mat);
+    t->dirty = 0;
+
+    /* Update children */
+    ecs_iter_t it = ecs_scope_iter(world, e);
+    while (ecs_scope_next(&it)) {
+        int32_t t_index = ecs_table_component_index(&it, ecs_entity(transform));
+        transform* tarr = ecs_table_column(&it, t_index);
+
+        /* Recursively update subtrees */
+        for (int32_t i = 0; i < it.count; i++) {
+            transform* tc = &tarr[i];
+            transform_update_subtree(world, ecs_entity(transform), it.entities[i], tc, t);
+        }
+    }
+}
+
+static void transform_system(ecs_iter_t* it)
+{
+    ecs_entity_t ecs_entity(transform) = ecs_column_entity(it, 1);
+    transform* tarr = ecs_column(it, transform, 1);
+    transform* parent = ecs_column(it, transform, 2);
+
+    for (int32_t i = 0; i < it->count; ++i) {
         transform* t = &tarr[i];
         if (t->dirty) {
-            /* Get current entity */
-            ecs_entity_t e = rows->entities[i];
-
-            /* Make world matrix */
-            mat4 m = mat4_world(
-                    t->pose.translation,
-                    t->pose.scale,
-                    t->pose.rotation);
-            t->local_mat = m;
-            t->world_mat = mat4_mul_mat4(pm, m);
-            t->dirty = 0;
-
-            /* Propagate dirty flag bellow */
-            ECS_TYPE_VAR(ft) = ecs_type_from_entity(rows->world, e);
-            ecs_run_w_filter(rows->world,
-                             pdflag,
-                             rows->delta_time,
-                             0, 0, ft, 0);
+            ecs_entity_t e = it->entities[i];
+            transform_update_subtree(it->world, ecs_entity(transform), e, t, parent);
         }
     }
 }
@@ -176,14 +183,14 @@ struct pri_params {
     resmngr rm;
 };
 
-static void prepare_renderer_model_inputs_system(ecs_rows_t* rows)
+static void prepare_renderer_model_inputs_system(ecs_iter_t* it)
 {
-    ECS_COLUMN(rows, transform, tarr, 1);
-    ECS_COLUMN(rows, model, marr, 2);
-    struct pri_params* pp = rows->param;
+    ECS_COLUMN(it, transform, tarr, 1);
+    ECS_COLUMN(it, model, marr, 2);
+    struct pri_params* pp = it->param;
 
     /* Copy over data */
-    for (uint32_t i = 0; i < rows->count; ++i) {
+    for (int32_t i = 0; i < it->count; ++i) {
         /* Get component ptrs for current entity */
         transform* t = &tarr[i];
         model* m = &marr[i];
@@ -196,14 +203,14 @@ static void prepare_renderer_model_inputs_system(ecs_rows_t* rows)
     }
 }
 
-static void prepare_renderer_light_inputs_system(ecs_rows_t* rows)
+static void prepare_renderer_light_inputs_system(ecs_iter_t* it)
 {
-    ECS_COLUMN(rows, transform, tarr, 1);
-    ECS_COLUMN(rows, light, larr, 2);
-    struct pri_params* pp = rows->param;
+    ECS_COLUMN(it, transform, tarr, 1);
+    ECS_COLUMN(it, light, larr, 2);
+    struct pri_params* pp = it->param;
 
     /* Copy over data */
-    for (uint32_t i = 0; i < rows->count; ++i) {
+    for (int32_t i = 0; i < it->count; ++i) {
         /* Get component ptrs for current entity */
         transform* t = &tarr[i];
         light* l = &larr[i];
@@ -225,10 +232,19 @@ static void prepare_renderer_light_inputs_system(ecs_rows_t* rows)
 
 void ecs_prepare_renderer_inputs(ecs_world_t* world, renderer_inputs* ri, resmngr rm)
 {
-    ecs_entity_t primsys = ecs_lookup(world, "prepare_renderer_model_inputs_system");
-    ecs_entity_t prilsys = ecs_lookup(world, "prepare_renderer_light_inputs_system");
-    ecs_run(world, primsys, 0, &(struct pri_params){ .ri = ri, .rm = rm });
-    ecs_run(world, prilsys, 0, &(struct pri_params){ .ri = ri, .rm = rm });
+    (void)world;
+
+    ecs_iter_t prm_it = ecs_query_iter(ecs_internal.prm_query);
+    prm_it.param = &(struct pri_params){ .ri = ri, .rm = rm };
+    while (ecs_query_next(&prm_it)) {
+        prepare_renderer_model_inputs_system(&prm_it);
+    }
+
+    ecs_iter_t prl_it = ecs_query_iter(ecs_internal.prl_query);
+    prl_it.param = &(struct pri_params){ .ri = ri, .rm = rm };
+    while (ecs_query_next(&prl_it)) {
+        prepare_renderer_light_inputs_system(&prl_it);
+    }
 }
 
 void ecs_free_render_inputs(ecs_world_t* world, renderer_inputs* ri)
@@ -244,11 +260,16 @@ void ecs_setup_internal(ecs_world_t* world)
     ECS_COMPONENT(world, model);
     ECS_COMPONENT(world, light);
 
+    /* Register internal triggers */
+    ECS_TRIGGER(world, transform_add_system, EcsOnAdd, transform);
+    ECS_TRIGGER(world, model_add_system, EcsOnAdd, model);
+
     /* Register internal systems */
-    ECS_SYSTEM(world, propagate_dirty_flag_system, EcsManual, transform, CONTAINER.transform);
-    ECS_SYSTEM(world, transform_add_system, EcsOnAdd, transform);
-    ECS_SYSTEM(world, transform_system, EcsOnUpdate, transform, CASCADE.transform, .propagate_dirty_flag_system);
-    ECS_SYSTEM(world, prepare_renderer_model_inputs_system, EcsManual, transform, model);
-    ECS_SYSTEM(world, prepare_renderer_light_inputs_system, EcsManual, transform, light);
-    ECS_SYSTEM(world, model_add_system, EcsOnAdd, model);
+    ECS_SYSTEM(world, transform_system, EcsOnUpdate, transform, CASCADE:transform);
+
+    /* Create queries */
+    ecs_query_t* prm_query = ecs_query_new(world, "transform, model");
+    ecs_query_t* prl_query = ecs_query_new(world, "transform, light");
+    ecs_internal.prm_query = prm_query;
+    ecs_internal.prl_query = prl_query;
 }
