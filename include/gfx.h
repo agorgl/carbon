@@ -49,6 +49,7 @@ typedef sg_usage                        gfx_usage;
 typedef sg_buffer_type                  gfx_buffer_type;
 typedef sg_index_type                   gfx_index_type;
 typedef sg_image_type                   gfx_image_type;
+typedef sg_sampler_type                 gfx_sampler_type;
 typedef sg_cube_face                    gfx_cube_face;
 typedef sg_shader_stage                 gfx_shader_stage;
 typedef sg_primitive_type               gfx_primitive_type;
@@ -98,6 +99,7 @@ typedef sg_image_info                   gfx_image_info;
 typedef sg_shader_info                  gfx_shader_info;
 typedef sg_pipeline_info                gfx_pipeline_info;
 typedef sg_pass_info                    gfx_pass_info;
+typedef sg_context_desc                 gfx_context_desc;
 typedef sg_desc                         gfx_desc;
 
 #define gfx_setup                       sg_setup
@@ -194,6 +196,7 @@ typedef sg_desc                         gfx_desc;
 #define GFX_BACKEND_METAL_IOS                    SG_BACKEND_METAL_IOS
 #define GFX_BACKEND_METAL_MACOS                  SG_BACKEND_METAL_MACOS
 #define GFX_BACKEND_METAL_SIMULATOR              SG_BACKEND_METAL_SIMULATOR
+#define GFX_BACKEND_WGPU                         SG_BACKEND_WGPU
 #define GFX_BACKEND_DUMMY                        SG_BACKEND_DUMMY
 #define GFX_PIXELFORMAT_NONE                     SG_PIXELFORMAT_NONE
 #define GFX_PIXELFORMAT_R8                       SG_PIXELFORMAT_R8
@@ -264,9 +267,6 @@ typedef sg_desc                         gfx_desc;
 #define GFX_USAGE_IMMUTABLE                      SG_USAGE_IMMUTABLE
 #define GFX_USAGE_DYNAMIC                        SG_USAGE_DYNAMIC
 #define GFX_USAGE_STREAM                         SG_USAGE_STREAM
-#define GFX_USAGE_IMMUTABLE                      SG_USAGE_IMMUTABLE
-#define GFX_USAGE_DYNAMIC                        SG_USAGE_DYNAMIC
-#define GFX_USAGE_STREAM                         SG_USAGE_STREAM
 #define GFX_BUFFERTYPE_VERTEXBUFFER              SG_BUFFERTYPE_VERTEXBUFFER
 #define GFX_BUFFERTYPE_INDEXBUFFER               SG_BUFFERTYPE_INDEXBUFFER
 #define GFX_INDEXTYPE_NONE                       SG_INDEXTYPE_NONE
@@ -276,6 +276,9 @@ typedef sg_desc                         gfx_desc;
 #define GFX_IMAGETYPE_CUBE                       SG_IMAGETYPE_CUBE
 #define GFX_IMAGETYPE_3D                         SG_IMAGETYPE_3D
 #define GFX_IMAGETYPE_ARRAY                      SG_IMAGETYPE_ARRAY
+#define GFX_SAMPLERTYPE_FLOAT                    SG_SAMPLERTYPE_FLOAT
+#define GFX_SAMPLERTYPE_SINT                     SG_SAMPLERTYPE_SINT
+#define GFX_SAMPLERTYPE_UINT                     SG_SAMPLERTYPE_UINT
 #define GFX_CUBEFACE_POS_X                       SG_CUBEFACE_POS_X
 #define GFX_CUBEFACE_NEG_X                       SG_CUBEFACE_NEG_X
 #define GFX_CUBEFACE_POS_Y                       SG_CUBEFACE_POS_Y
@@ -320,7 +323,6 @@ typedef sg_desc                         gfx_desc;
 #define GFX_VERTEXFORMAT_USHORT4N                SG_VERTEXFORMAT_USHORT4N
 #define GFX_VERTEXFORMAT_UINT10_N2               SG_VERTEXFORMAT_UINT10_N2
 #define GFX_VERTEXSTEP_PER_VERTEX                SG_VERTEXSTEP_PER_VERTEX
-#define GFX_VERTEXSTEP_PER_VERTEX                SG_VERTEXSTEP_PER_VERTEX
 #define GFX_VERTEXSTEP_PER_INSTANCE              SG_VERTEXSTEP_PER_INSTANCE
 #define GFX_UNIFORMTYPE_INVALID                  SG_UNIFORMTYPE_INVALID
 #define GFX_UNIFORMTYPE_FLOAT                    SG_UNIFORMTYPE_FLOAT
@@ -333,7 +335,6 @@ typedef sg_desc                         gfx_desc;
 #define GFX_CULLMODE_BACK                        SG_CULLMODE_BACK
 #define GFX_FACEWINDING_CCW                      SG_FACEWINDING_CCW
 #define GFX_FACEWINDING_CW                       SG_FACEWINDING_CW
-#define GFX_COMPAREFUNC_ALWAYS                   SG_COMPAREFUNC_ALWAYS
 #define GFX_COMPAREFUNC_NEVER                    SG_COMPAREFUNC_NEVER
 #define GFX_COMPAREFUNC_LESS                     SG_COMPAREFUNC_LESS
 #define GFX_COMPAREFUNC_EQUAL                    SG_COMPAREFUNC_EQUAL
@@ -378,10 +379,5 @@ typedef sg_desc                         gfx_desc;
 #define GFX_ACTION_CLEAR                         SG_ACTION_CLEAR
 #define GFX_ACTION_LOAD                          SG_ACTION_LOAD
 #define GFX_ACTION_DONTCARE                      SG_ACTION_DONTCARE
-#define GFX_ACTION_CLEAR                         SG_ACTION_CLEAR
-#define GFX_ACTION_LOAD                          SG_ACTION_LOAD
-#define GFX_ACTION_DONTCARE                      SG_ACTION_DONTCARE
-#define GFX_MAX_SHADERSTAGE_IMAGES               SG_MAX_SHADERSTAGE_IMAGES
-#define GFX_IMAGETYPE_ARRAY                      SG_IMAGETYPE_ARRAY
 
 #endif /* ! _GFX_H_ */
