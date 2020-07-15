@@ -1,5 +1,5 @@
 PRJTYPE = StaticLib
-VERSION = 3.3.0
+VERSION = 3.3.2
 SRC = \
 	src/context.c \
 	src/init.c    \
