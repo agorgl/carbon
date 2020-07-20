@@ -159,7 +159,6 @@ text_renderer text_renderer_create()
         .rasterizer = {
             .cull_mode = GFX_CULLMODE_BACK,
             .face_winding = GFX_FACEWINDING_CCW,
-            .sample_count = 1
         },
         .blend = {
             .enabled = true,

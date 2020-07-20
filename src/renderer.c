@@ -62,20 +62,17 @@ typedef struct {
 renderer renderer_create(renderer_params* params)
 {
     /* Setup gfx wrapper */
-    const gfx_desc desc = {};
+    const gfx_desc desc = { .context.sample_count = 4 };
     gfx_setup(&desc);
     assert(gfx_isvalid());
 
     /* Create render target images */
-    gfx_features features = gfx_query_features();
-    const int sample_count = features.msaa_render_targets ? 4 : 1;
     gfx_image_desc img_desc = {
         .render_target = 1,
         .width = params->width,
         .height = params->height,
         .min_filter = GFX_FILTER_LINEAR,
         .mag_filter = GFX_FILTER_LINEAR,
-        .sample_count = sample_count
     };
     gfx_image color_img = gfx_make_image(&img_desc);
     img_desc.pixel_format = GFX_PIXELFORMAT_DEPTH;
@@ -252,7 +249,6 @@ renderer renderer_create(renderer_params* params)
         .rasterizer = {
             .cull_mode = GFX_CULLMODE_BACK,
             .face_winding = GFX_FACEWINDING_CCW,
-            .sample_count = sample_count
         }
     });
 
@@ -296,6 +292,9 @@ renderer renderer_create(renderer_params* params)
             .color_format = GFX_PIXELFORMAT_RGBA32F,
             .depth_format = GFX_PIXELFORMAT_NONE,
         },
+        .rasterizer = {
+            .sample_count = 1
+        }
     });
 
     /* Shadowmap pass */
@@ -340,7 +339,6 @@ renderer renderer_create(renderer_params* params)
         .rasterizer = {
             .cull_mode = GFX_CULLMODE_BACK,
             .face_winding = GFX_FACEWINDING_CCW,
-            .sample_count = sample_count
         }
     });
 
@@ -362,7 +360,6 @@ renderer renderer_create(renderer_params* params)
         .height        = PROBE_CUBEMAP_RESOLUTION,
         .min_filter    = GFX_FILTER_LINEAR,
         .mag_filter    = GFX_FILTER_LINEAR,
-        .sample_count  = sample_count,
     });
 
     gfx_image probe_depth_img = gfx_make_image(&(gfx_image_desc){
@@ -371,7 +368,6 @@ renderer renderer_create(renderer_params* params)
         .width         = PROBE_CUBEMAP_RESOLUTION,
         .height        = PROBE_CUBEMAP_RESOLUTION,
         .pixel_format  = GFX_PIXELFORMAT_DEPTH_STENCIL,
-        .sample_count  = sample_count,
     });
 
     /* Probe cubemap passes */
