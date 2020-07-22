@@ -589,11 +589,13 @@ clean_$(D):
 	@$(call remove, $$(BANNERFILE_$(D)))
 	@$(call rmdir, $(BUILDDIR)/$(VARIANT)/$(SRCDIR_$(D)))
 
+ifeq ($$(PRJTYPE_$(D)), Executable)
 # Executes target
 run_$(D): build_$(D)
 	@echo Executing $$(MASTEROUT_$(D)) ...
 	@$$(eval export PATH := $(PATH)$(pathsep)$$(subst $$(space),$(pathsep),$$(addprefix $$(CURDIR)/, $$(LIBPATHS_$(D)))))
 	@cd $(D) && $$(call native_path, $$(call canonical_path, $$(abspath $$(CURDIR)/$(D)), $$(MASTEROUT_$(D))))
+endif
 
 # Pkg.mk file contents
 define PCFG_$(D)
@@ -706,7 +708,10 @@ undefine SILENT
 $(foreach subproj, $(NONSILENT_SUBPROJS), $(eval $(call gen-build-rules, $(subproj))))
 
 # Aliases
-run: run_.
+run: $(firstword \
+		 $(foreach subproj, $(NONSILENT_SUBPROJS), \
+			$(if $(filter $(PRJTYPE_$(subproj)), Executable), \
+				run_$(subproj),)))
 build: build_.
 clean: clean_.
 install: install_.
