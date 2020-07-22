@@ -5,6 +5,7 @@
 static struct {
     ecs_query_t* prm_query;
     ecs_query_t* prl_query;
+    ecs_query_t* prc_query;
 } ecs_internal;
 
 static void transform_add_system(ecs_iter_t* it)
@@ -29,6 +30,17 @@ static void model_add_system(ecs_iter_t* it)
 
     for (int32_t i = 0; i < it->count; ++i) {
         ecs_set(it->world, it->entities[i], model, {.resource = RID_INVALID});
+    }
+}
+
+static void camera_add_system(ecs_iter_t* it)
+{
+    ECS_COLUMN_COMPONENT(it, camera, 1);
+
+    for (int32_t i = 0; i < it->count; ++i) {
+        camera cam;
+        camera_defaults(&cam);
+        ecs_set_ptr(it->world, it->entities[i], camera, &cam);
     }
 }
 
@@ -74,6 +86,16 @@ static void transform_system(ecs_iter_t* it)
             ecs_entity_t e = it->entities[i];
             transform_update_subtree(it->world, ecs_entity(transform), e, t, parent);
         }
+    }
+}
+
+static void camera_system(ecs_iter_t* it)
+{
+    camera* carr = ecs_column(it, camera, 1);
+
+    for (int32_t i = 0; i < it->count; ++i) {
+        camera* c = &carr[i];
+        camera_update(c, it->delta_time);
     }
 }
 
@@ -253,23 +275,45 @@ void ecs_free_render_inputs(ecs_world_t* world, renderer_inputs* ri)
     (void) ri;
 }
 
+void ecs_fetch_cameras(ecs_world_t* world, void* cameras[ECS_MAX_CAMERAS], size_t* num_cameras)
+{
+    (void)world;
+
+    *num_cameras = 0;
+    ecs_iter_t it = ecs_query_iter(ecs_internal.prc_query);
+    while (ecs_query_next(&it)) {
+        camera* carr = ecs_column(&it, camera, 1);
+        for (int32_t i = 0; i < it.count; ++i) {
+            camera* c = &carr[i];
+            cameras[(*num_cameras)++] = c;
+            if (*num_cameras >= ECS_MAX_CAMERAS)
+                break;
+        }
+    }
+}
+
 void ecs_setup_internal(ecs_world_t* world)
 {
     /* Register internal component types */
     ECS_COMPONENT(world, transform);
     ECS_COMPONENT(world, model);
     ECS_COMPONENT(world, light);
+    ECS_COMPONENT(world, camera);
 
     /* Register internal triggers */
     ECS_TRIGGER(world, transform_add_system, EcsOnAdd, transform);
     ECS_TRIGGER(world, model_add_system, EcsOnAdd, model);
+    ECS_TRIGGER(world, camera_add_system, EcsOnAdd, camera);
 
     /* Register internal systems */
     ECS_SYSTEM(world, transform_system, EcsOnUpdate, transform, CASCADE:transform);
+    ECS_SYSTEM(world, camera_system, EcsOnUpdate, camera);
 
     /* Create queries */
     ecs_query_t* prm_query = ecs_query_new(world, "transform, model");
     ecs_query_t* prl_query = ecs_query_new(world, "transform, light");
+    ecs_query_t* prc_query = ecs_query_new(world, "camera");
     ecs_internal.prm_query = prm_query;
     ecs_internal.prl_query = prl_query;
+    ecs_internal.prc_query = prc_query;
 }

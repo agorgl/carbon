@@ -35,6 +35,8 @@
 #include "renderer.h"
 #include "resmngr.h"
 
+#define ECS_MAX_CAMERAS (16)
+
 /* Registers internal components and systems */
 void ecs_setup_internal(ecs_world_t* world);
 
@@ -43,5 +45,8 @@ void ecs_prepare_renderer_inputs(ecs_world_t* world, renderer_inputs* ri, resmng
 
 /* Frees allocated resources used by render object list */
 void ecs_free_render_inputs(ecs_world_t* world, renderer_inputs* ri);
+
+/* Runs internal system to fetch camera object list */
+void ecs_fetch_cameras(ecs_world_t* world, void* cameras[ECS_MAX_CAMERAS], size_t* num_cameras);
 
 #endif /* ! _ECS_H_ */

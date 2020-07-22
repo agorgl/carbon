@@ -92,6 +92,9 @@ int main(int argc, char* argv[])
     /* Declare light type */
     ecs_entity_t ecs_entity(light) = ecs_lookup(world, "light");
 
+    /* Declare camera type */
+    ecs_entity_t ecs_entity(camera) = ecs_lookup(world, "camera");
+
     /* Create sample model resource */
     rid sample_model = resmngr_model_sample(rmgr);
 
@@ -149,6 +152,12 @@ int main(int argc, char* argv[])
         .color = cct(5500),
         .intensity = 120000,
     });
+
+    /* Create camera entity */
+    ECS_ENTITY(world, c, camera);
+    camera* cam = ecs_get_mut(world, c, camera, 0);
+    camera_setpos(cam, vec3_new(0.0f, 1.5f, 6.0f));
+    camera_setdir(cam, vec3_sub(vec3_zero(), cam->pos));
 
     /* Run */
     engine_run(engine);

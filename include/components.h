@@ -34,6 +34,7 @@
 #include <flecs.h>
 #include "linmath.h"
 #include "resmngr.h"
+#include "camera.h"
 
 typedef struct transform {
     /* Individual components */

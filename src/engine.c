@@ -95,11 +95,6 @@ engine engine_create(const engine_params* params)
     /* Create resource manager instance */
     e->rmgr = resmngr_create();
 
-    /* Setup camera defaults */
-    camera_defaults(&e->cam);
-    camera_setpos(&e->cam, vec3_new(0.0f, 1.5f, 6.0f));
-    camera_setdir(&e->cam, vec3_sub(vec3_zero(), e->cam.pos));
-
     /* Create world instance */
     e->world = ecs_init();
     ecs_setup_internal(e->world);
@@ -125,10 +120,8 @@ ecs_world_t* engine_world(engine e)
     return e->world;
 }
 
-static void camera_control_update(engine e, float dt)
+static void camera_control_update(engine e, camera* cam, float dt)
 {
-    camera* cam = &e->cam;
-
     /* Update camera position */
     int cam_mov_flags = 0x0;
     if (window_key_state(e->wnd, KEY_W) == KEY_ACTION_PRESS)
@@ -146,9 +139,14 @@ static void camera_control_update(engine e, float dt)
     window_get_cursor_diff(e->wnd, &cur_diff_x, &cur_diff_y);
     if (window_is_cursor_grubbed(e->wnd))
         camera_look(cam, cur_diff_x, cur_diff_y, dt);
+}
 
-    /* Update camera state */
-    camera_update(cam, dt);
+static camera* pick_active_camera(engine e)
+{
+    camera* cams[ECS_MAX_CAMERAS]; size_t num_cams;
+    ecs_fetch_cameras(e->world, (void*)cams, &num_cams);
+    camera* camera = num_cams != 0 ? cams[0] : 0;
+    return camera;
 }
 
 void engine_update(engine e, float dt)
@@ -156,8 +154,19 @@ void engine_update(engine e, float dt)
     /* Process pending loading operations */
     resmngr_process(e->rmgr);
 
-    /* Update camera */
-    camera_control_update(e, dt);
+    /* Pick active camera reference */
+    camera* cam = pick_active_camera(e);
+    if (cam) {
+        /* Update active camera and store it */
+        camera_control_update(e, cam, dt);
+        e->cam = *cam;
+    } else {
+        /* Fallback in case no camera is defined */
+        camera_defaults(&e->cam);
+        camera_setpos(&e->cam, vec3_new(0.0f, 1.5f, 6.0f));
+        camera_setdir(&e->cam, vec3_sub(vec3_zero(), e->cam.pos));
+        camera_update(&e->cam, dt);
+    }
 
     /* Poll events, and call event callbacks */
     window_update(e->wnd);
