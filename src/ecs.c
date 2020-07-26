@@ -8,41 +8,24 @@ static struct {
     ecs_query_t* prc_query;
 } ecs_internal;
 
-static void transform_add_system(ecs_iter_t* it)
-{
-    ECS_COLUMN_COMPONENT(it, transform, 1);
+ECS_CTOR(transform, ptr, {
+    *ptr = (transform){
+        .pose = {
+            .scale       = (vec3){{1.0, 1.0, 1.0}},
+            .rotation    = (quat){{0.0, 0.0, 0.0, 1.0}},
+            .translation = (vec3){{0.0, 0.0, 0.0}}
+        },
+        .dirty = 1
+    };
+});
 
-    for (int32_t i = 0; i < it->count; ++i) {
-        ecs_set(it->world, it->entities[i], transform, {
-            .pose = {
-                .scale       = (vec3){{1.0, 1.0, 1.0}},
-                .rotation    = (quat){{0.0, 0.0, 0.0, 1.0}},
-                .translation = (vec3){{0.0, 0.0, 0.0}}
-            },
-            .dirty = 1
-        });
-    }
-}
+ECS_CTOR(model, ptr, {
+    *ptr = (model){ .resource = RID_INVALID };
+});
 
-static void model_add_system(ecs_iter_t* it)
-{
-    ECS_COLUMN_COMPONENT(it, model, 1);
-
-    for (int32_t i = 0; i < it->count; ++i) {
-        ecs_set(it->world, it->entities[i], model, {.resource = RID_INVALID});
-    }
-}
-
-static void camera_add_system(ecs_iter_t* it)
-{
-    ECS_COLUMN_COMPONENT(it, camera, 1);
-
-    for (int32_t i = 0; i < it->count; ++i) {
-        camera cam;
-        camera_defaults(&cam);
-        ecs_set_ptr(it->world, it->entities[i], camera, &cam);
-    }
-}
+ECS_CTOR(camera, ptr, {
+    camera_defaults(ptr);
+});
 
 static void transform_update_subtree(ecs_world_t* world, ecs_entity_t ecs_entity(transform), ecs_entity_t e, transform* t, transform* tpar)
 {
@@ -300,10 +283,10 @@ void ecs_setup_internal(ecs_world_t* world)
     ECS_COMPONENT(world, light);
     ECS_COMPONENT(world, camera);
 
-    /* Register internal triggers */
-    ECS_TRIGGER(world, transform_add_system, EcsOnAdd, transform);
-    ECS_TRIGGER(world, model_add_system, EcsOnAdd, model);
-    ECS_TRIGGER(world, camera_add_system, EcsOnAdd, camera);
+    /* Register internal lifecycle callbacks */
+    ecs_set_component_actions(world, transform, { .ctor = ecs_ctor(transform) });
+    ecs_set_component_actions(world, model, { .ctor = ecs_ctor(model) });
+    ecs_set_component_actions(world, camera, { .ctor = ecs_ctor(camera) });
 
     /* Register internal systems */
     ECS_SYSTEM(world, transform_system, EcsOnUpdate, transform, CASCADE:transform);
