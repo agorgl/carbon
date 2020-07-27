@@ -145,8 +145,15 @@ int main(int argc, char* argv[])
     /* Fetch the resource manager instance */
     resmngr rmgr = engine_resmngr(engine);
 
-    /* Create scene */
-    setup_demo_scene(world, rmgr);
+    /* Populate scene */
+    const char* scene_file = getenv("CARBON_SCENE");
+    if (scene_file) {
+        /* Load scene from file */
+        carbon_load_scene_file(world, rmgr, scene_file);
+    } else {
+        /* Fallback to demo scene */
+        setup_demo_scene(world, rmgr);
+    }
 
     /* Run */
     engine_run(engine);
