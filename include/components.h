@@ -62,4 +62,14 @@ typedef struct light {
     float intensity;
 } light;
 
+#define IMPORT_COMPONENT(world, component) \
+    ecs_entity_t ecs_entity(component) = ecs_lookup(world, #component); \
+    (void)ecs_entity(component);
+
+#define IMPORT_COMPONENTS(world)       \
+    IMPORT_COMPONENT(world, transform) \
+    IMPORT_COMPONENT(world, model)     \
+    IMPORT_COMPONENT(world, light)     \
+    IMPORT_COMPONENT(world, camera)
+
 #endif /* ! _COMPONENTS_H_ */

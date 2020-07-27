@@ -50,12 +50,6 @@ static void spin_system(ecs_iter_t* it)
     }
 }
 
-static void setup_spin_system(ecs_world_t* world)
-{
-    ECS_COMPONENT(world, spin);
-    ECS_SYSTEM(world, spin_system, EcsOnUpdate, transform, spin);
-}
-
 int main(int argc, char* argv[])
 {
     (void) argc;
@@ -77,23 +71,12 @@ int main(int argc, char* argv[])
     /* Fetch the resource manager instance */
     resmngr rmgr = engine_resmngr(engine);
 
+    /* Import internal component handles */
+    IMPORT_COMPONENTS(world);
+
     /* Create demo component and system */
-    setup_spin_system(world);
-
-    /* Declare transform type */
-    ecs_entity_t ecs_entity(transform) = ecs_lookup(world, "transform");
-
-    /* Declare spin type */
-    ecs_entity_t ecs_entity(spin) = ecs_lookup(world, "spin");
-
-    /* Declare model type */
-    ecs_entity_t ecs_entity(model) = ecs_lookup(world, "model");
-
-    /* Declare light type */
-    ecs_entity_t ecs_entity(light) = ecs_lookup(world, "light");
-
-    /* Declare camera type */
-    ecs_entity_t ecs_entity(camera) = ecs_lookup(world, "camera");
+    ECS_COMPONENT(world, spin);
+    ECS_SYSTEM(world, spin_system, EcsOnUpdate, transform, spin);
 
     /* Create sample model resource */
     rid sample_model = resmngr_model_sample(rmgr);
