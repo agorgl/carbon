@@ -41,5 +41,6 @@
 #include "color.h"
 
 void carbon_setup();
+void carbon_load_scene_file(ecs_world_t* world, resmngr rmgr, const char* path);
 
 #endif /* ! _CARBON_H_ */
