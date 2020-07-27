@@ -50,27 +50,8 @@ static void spin_system(ecs_iter_t* it)
     }
 }
 
-int main(int argc, char* argv[])
+static void setup_demo_scene(ecs_world_t* world, resmngr rmgr)
 {
-    (void) argc;
-    (void) argv;
-
-    /* Initialize internal library structures */
-    carbon_setup();
-
-    /* Create engine instance with given params */
-    engine_params params = (engine_params){
-        .width  = 1280,
-        .height = 720,
-    };
-    engine engine = engine_create(&params);
-
-    /* Fetch the world instance */
-    ecs_world_t* world = engine_world(engine);
-
-    /* Fetch the resource manager instance */
-    resmngr rmgr = engine_resmngr(engine);
-
     /* Import internal component handles */
     IMPORT_COMPONENTS(world);
 
@@ -141,6 +122,31 @@ int main(int argc, char* argv[])
     camera* cam = ecs_get_mut(world, c, camera, 0);
     camera_setpos(cam, vec3_new(0.0f, 1.5f, 6.0f));
     camera_setdir(cam, vec3_sub(vec3_zero(), cam->pos));
+}
+
+int main(int argc, char* argv[])
+{
+    (void) argc;
+    (void) argv;
+
+    /* Initialize internal library structures */
+    carbon_setup();
+
+    /* Create engine instance with given params */
+    engine_params params = (engine_params){
+        .width  = 1280,
+        .height = 720,
+    };
+    engine engine = engine_create(&params);
+
+    /* Fetch the world instance */
+    ecs_world_t* world = engine_world(engine);
+
+    /* Fetch the resource manager instance */
+    resmngr rmgr = engine_resmngr(engine);
+
+    /* Create scene */
+    setup_demo_scene(world, rmgr);
 
     /* Run */
     engine_run(engine);
