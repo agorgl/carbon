@@ -4,7 +4,6 @@
 #include <string.h>
 #include <limits.h>
 #include <assert.h>
-#include <endian.h>
 #include <inttypes.h>
 
 /*---------------------------------------------------------------
@@ -91,6 +90,14 @@ static void test_walk(void)
 #endif
 
 /*
+ * htole32 macro in systems without endian.h
+ */
+#ifndef htole32
+/* WARNING: Only works for LITTLE_ENDIAN architectures */
+#define htole32(x) (x)
+#endif
+
+/*
  * Minimum, maximum and rounding macros.
  */
 #ifndef MIN
@@ -116,6 +123,18 @@ static void test_walk(void)
 #ifndef fls
 static inline int fls(int x) { return x ? (sizeof(int) * CHAR_BIT) - __builtin_clz(x) : 0; }
 #endif
+
+/*
+ * Random number generation.
+ */
+static long long rnd()
+{
+#ifndef _WIN32
+    return random();
+#else
+    return rand();
+#endif
+}
 
 /*---------------------------------------------------------------
  * Fast Div
@@ -466,7 +485,7 @@ static int hashmap_resize(hashmap_t* hmap, size_t newsize)
     hmap->nitems  = 0;
 
     hmap->divinfo  = fast_div32_init(newsize);
-    hmap->hashkey ^= random() | (random() << 32);
+    hmap->hashkey ^= rnd() | (rnd() << 32);
 
     for (unsigned i = 0; i < oldsize; i++) {
         const rh_bucket_t* bucket = &oldbuckets[i];
