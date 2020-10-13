@@ -22,14 +22,6 @@ static void* osxsectiondata(const char* sectname)
   extern const unsigned char _section$__DATA__ ## NAME [];
 #define LDVAR(NAME) (osxsectiondata("__" #NAME))
 #define LDLEN(NAME) (osxsectionsize("__" #NAME))
-#elif (defined __WIN32__) /* MinGW */
-#define EXTLD(NAME) \
-  extern const unsigned char binary_ ## NAME ## _start[]; \
-  extern const unsigned char binary_ ## NAME ## _end[];
-#define LDVAR(NAME) \
-  binary_ ## NAME ## _start
-#define LDLEN(NAME) \
-  ((binary_ ## NAME ## _end) - (binary_ ## NAME ## _start))
 #else /* GNU/Linux ld */
 #define EXTLD(NAME) \
   extern const unsigned char _binary_ ## NAME ## _start[]; \
