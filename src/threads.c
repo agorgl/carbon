@@ -1,6 +1,30 @@
 #include "threads.h"
 #include <pthread.h>
 
+#ifdef _WIN32
+#include <windows.h>
+
+static int nanosleep(const struct timespec* requested_time, struct timespec* remaining)
+{
+    HANDLE timer;
+    LARGE_INTEGER ft;
+
+    ft.QuadPart = -((int64_t)requested_time->tv_sec * 10000000 + (int64_t)requested_time->tv_nsec / 100);
+    timer = CreateWaitableTimer(NULL, TRUE, NULL);
+    if (!timer)
+        return -1;
+
+    if (!SetWaitableTimer(timer, &ft, 0, NULL, NULL, 0)) {
+        CloseHandle(timer);
+        return -1;
+    }
+
+    WaitForSingleObject(timer, INFINITE);
+    CloseHandle(timer);
+    return 0;
+}
+#endif
+
 /*
  * Configuration macro:
  *   EMULATED_THREADS_USE_NATIVE_TIMEDLOCK
