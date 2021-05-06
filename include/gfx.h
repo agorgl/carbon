@@ -39,6 +39,8 @@ typedef sg_shader                       gfx_shader;
 typedef sg_pipeline                     gfx_pipeline;
 typedef sg_pass                         gfx_pass;
 typedef sg_context                      gfx_context;
+typedef sg_range                        gfx_range;
+typedef sg_color                        gfx_color;
 typedef sg_backend                      gfx_backend;
 typedef sg_pixel_format                 gfx_pixel_format;
 typedef sg_pixelformat_info             gfx_pixelformat_info;
@@ -73,8 +75,7 @@ typedef sg_stencil_attachment_action    gfx_stencil_attachment_action;
 typedef sg_pass_action                  gfx_pass_action;
 typedef sg_bindings                     gfx_bindings;
 typedef sg_buffer_desc                  gfx_buffer_desc;
-typedef sg_subimage_content             gfx_subimage_content;
-typedef sg_image_content                gfx_image_content;
+typedef sg_image_data                   gfx_image_data;
 typedef sg_image_desc                   gfx_image_desc;
 typedef sg_shader_attr_desc             gfx_shader_attr_desc;
 typedef sg_shader_uniform_desc          gfx_shader_uniform_desc;
@@ -85,12 +86,13 @@ typedef sg_shader_desc                  gfx_shader_desc;
 typedef sg_buffer_layout_desc           gfx_buffer_layout_desc;
 typedef sg_vertex_attr_desc             gfx_vertex_attr_desc;
 typedef sg_layout_desc                  gfx_layout_desc;
+typedef sg_stencil_face_state           gfx_stencil_face_state;
 typedef sg_stencil_state                gfx_stencil_state;
-typedef sg_depth_stencil_state          gfx_depth_stencil_state;
+typedef sg_depth_state                  gfx_depth_state;
 typedef sg_blend_state                  gfx_blend_state;
-typedef sg_rasterizer_state             gfx_rasterizer_state;
+typedef sg_color_state                  gfx_color_state;
 typedef sg_pipeline_desc                gfx_pipeline_desc;
-typedef sg_attachment_desc              gfx_attachment_desc;
+typedef sg_pass_attachment_desc         gfx_pass_attachment_desc;
 typedef sg_pass_desc                    gfx_pass_desc;
 typedef sg_trace_hooks                  gfx_trace_hooks;
 typedef sg_slot_info                    gfx_slot_info;
@@ -126,9 +128,12 @@ typedef sg_desc                         gfx_desc;
 #define gfx_query_buffer_overflow       sg_query_buffer_overflow
 
 #define gfx_begin_default_pass          sg_begin_default_pass
+#define gfx_begin_default_passf         sg_begin_default_passf
 #define gfx_begin_pass                  sg_begin_pass
 #define gfx_apply_viewport              sg_apply_viewport
+#define gfx_apply_viewportf             sg_apply_viewportf
 #define gfx_apply_scissor_rect          sg_apply_scissor_rect
+#define gfx_apply_scissor_rectf         sg_apply_scissor_rectf
 #define gfx_apply_pipeline              sg_apply_pipeline
 #define gfx_apply_bindings              sg_apply_bindings
 #define gfx_apply_uniforms              sg_apply_uniforms
@@ -162,12 +167,23 @@ typedef sg_desc                         gfx_desc;
 #define gfx_alloc_shader                sg_alloc_shader
 #define gfx_alloc_pipeline              sg_alloc_pipeline
 #define gfx_alloc_pass                  sg_alloc_pass
+#define gfx_dealloc_buffer              sg_dealloc_buffer
+#define gfx_dealloc_image               sg_dealloc_image
+#define gfx_dealloc_shader              sg_dealloc_shader
+#define gfx_dealloc_pipeline            sg_dealloc_pipeline
+#define gfx_dealloc_pass                sg_dealloc_pass
 
 #define gfx_init_buffer                 sg_init_buffer
 #define gfx_init_image                  sg_init_image
 #define gfx_init_shader                 sg_init_shader
 #define gfx_init_pipeline               sg_init_pipeline
 #define gfx_init_pass                   sg_init_pass
+#define gfx_uninit_buffer               sg_uninit_buffer
+#define gfx_uninit_image                sg_uninit_image
+#define gfx_uninit_shader               sg_uninit_shader
+#define gfx_uninit_pipeline             sg_uninit_pipeline
+#define gfx_uninit_pass                 sg_uninit_pass
+
 #define gfx_fail_buffer                 sg_fail_buffer
 #define gfx_fail_image                  sg_fail_image
 #define gfx_fail_shader                 sg_fail_shader
@@ -372,9 +388,18 @@ typedef sg_desc                         gfx_desc;
 #define GFX_COLORMASK_NONE                       SG_COLORMASK_NONE
 #define GFX_COLORMASK_R                          SG_COLORMASK_R
 #define GFX_COLORMASK_G                          SG_COLORMASK_G
+#define GFX_COLORMASK_RG                         SG_COLORMASK_RG
 #define GFX_COLORMASK_B                          SG_COLORMASK_B
-#define GFX_COLORMASK_A                          SG_COLORMASK_A
+#define GFX_COLORMASK_RB                         SG_COLORMASK_RB
+#define GFX_COLORMASK_GB                         SG_COLORMASK_GB
 #define GFX_COLORMASK_RGB                        SG_COLORMASK_RGB
+#define GFX_COLORMASK_A                          SG_COLORMASK_A
+#define GFX_COLORMASK_RA                         SG_COLORMASK_RA
+#define GFX_COLORMASK_GA                         SG_COLORMASK_GA
+#define GFX_COLORMASK_RGA                        SG_COLORMASK_RGA
+#define GFX_COLORMASK_BA                         SG_COLORMASK_BA
+#define GFX_COLORMASK_RBA                        SG_COLORMASK_RBA
+#define GFX_COLORMASK_GBA                        SG_COLORMASK_GBA
 #define GFX_COLORMASK_RGBA                       SG_COLORMASK_RGBA
 #define GFX_ACTION_CLEAR                         SG_ACTION_CLEAR
 #define GFX_ACTION_LOAD                          SG_ACTION_LOAD
