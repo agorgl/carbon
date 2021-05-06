@@ -152,8 +152,10 @@ rid resmngr_model_sample(resmngr rm)
          0.5,  0.5, -0.5,    0.0,  0.0, -1.0,    1.0, 1.0,    0.0, 0.0, 0.0, 0.0,
     };
     gfx_buffer vbuf = gfx_make_buffer(&(gfx_buffer_desc){
-        .size = sizeof(vertices),
-        .content = vertices,
+        .data = {
+            .ptr = vertices,
+            .size = sizeof(vertices),
+        },
     });
 
     uint32_t indices[] = {
@@ -172,8 +174,10 @@ rid resmngr_model_sample(resmngr rm)
     };
     gfx_buffer ibuf = gfx_make_buffer(&(gfx_buffer_desc){
         .type = GFX_BUFFERTYPE_INDEXBUFFER,
-        .size = sizeof(indices),
-        .content = indices,
+        .data = {
+            .ptr = indices,
+            .size = sizeof(indices),
+        }
     });
 
     *rs = (renderer_scene){
@@ -419,13 +423,17 @@ static void gltf_parse_meshes(renderer_scene* rs, const cgltf_data* gltf)
 
         /* Upload and store buffer handles */
         rs->buffers[rs->num_buffers++] = gfx_make_buffer(&(gfx_buffer_desc){
-            .size = vcount * vsize,
-            .content = vdata,
+            .data = {
+                .ptr = vdata,
+                .size = vcount * vsize,
+            }
         });
         rs->buffers[rs->num_buffers++] = gfx_make_buffer(&(gfx_buffer_desc){
             .type = GFX_BUFFERTYPE_INDEXBUFFER,
-            .size = icount * sizeof(*idata),
-            .content = idata,
+            .data = {
+                .ptr = idata,
+                .size = icount * sizeof(*idata),
+            }
         });
 
         /* Free intermediate buffers */
@@ -569,7 +577,7 @@ static void image_mipmaps_populate(gfx_image_desc* desc)
         unsigned int target_width = desc->width, target_height = desc->height;
         for (int level = 1; level < GFX_MAX_MIPMAPS; ++level) {
             unsigned img_size = target_width * target_height * pixel_size;
-            unsigned char* source = (unsigned char*)desc->content.subimage[cube_face][level - 1].ptr;
+            unsigned char* source = (unsigned char*)desc->data.subimage[cube_face][level - 1].ptr;
             if (!source)
                 break;
 
@@ -599,8 +607,8 @@ static void image_mipmaps_populate(gfx_image_desc* desc)
                 }
             }
 
-            desc->content.subimage[cube_face][level].ptr = target;
-            desc->content.subimage[cube_face][level].size = img_size;
+            desc->data.subimage[cube_face][level].ptr = target;
+            desc->data.subimage[cube_face][level].size = img_size;
             if (desc->num_mipmaps <= level)
                 desc->num_mipmaps = level + 1;
         }
@@ -611,8 +619,8 @@ static void image_mipmaps_free(gfx_image_desc* desc)
 {
     for (int cube_face = 0; cube_face < GFX_CUBEFACE_NUM; ++cube_face) {
         for (int i = 1; i < GFX_MAX_MIPMAPS; ++i) {
-            gfx_subimage_content* sic = &desc->content.subimage[cube_face][i];
-            free((void*)sic->ptr);
+            gfx_range* si = &desc->data.subimage[cube_face][i];
+            free((void*)si->ptr);
         }
     }
 }
@@ -645,7 +653,7 @@ static void image_resource_load(void* data)
         .min_filter   = GFX_FILTER_LINEAR_MIPMAP_LINEAR,
         .mag_filter   = GFX_FILTER_LINEAR,
         .pixel_format = GFX_PIXELFORMAT_RGBA8,
-        .content.subimage[0][0] = {
+        .data.subimage[0][0] = {
             .ptr = pixels,
             .size = width * height * channels
         }
@@ -678,8 +686,8 @@ static void upload_image_resource(gfx_image im, gfx_image_desc* desc)
 
     /* Free texture data from host memory */
     for (int cube_face = 0; cube_face < GFX_CUBEFACE_NUM; ++cube_face) {
-        gfx_subimage_content* sic = &desc->content.subimage[cube_face][0];
-        free((void*)sic->ptr);
+        gfx_range* si = &desc->data.subimage[cube_face][0];
+        free((void*)si->ptr);
     }
     image_mipmaps_free(desc);
     free(desc);
@@ -803,7 +811,7 @@ static rid resmngr_font_from_ttf(resmngr rm, load_params lparams)
         .wrap_u       = GFX_WRAP_CLAMP_TO_EDGE,
         .wrap_v       = GFX_WRAP_CLAMP_TO_EDGE,
         .pixel_format = GFX_PIXELFORMAT_R8,
-        .content.subimage[0][0] = {
+        .data.subimage[0][0] = {
             .ptr  = fnt->atlas->data,
             .size = atlas_sz * atlas_sz * 1
         }

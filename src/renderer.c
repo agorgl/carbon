@@ -149,10 +149,10 @@ renderer renderer_create(renderer_params* params)
             }
         },
         .fs.images = {
-            [0] = { .name = "bcolor_map", .type = GFX_IMAGETYPE_2D },
-            [1] = { .name = "normal_map", .type = GFX_IMAGETYPE_2D },
-            [2] = { .name = "mtlrgn_map", .type = GFX_IMAGETYPE_2D },
-            [3] = { .name = "shadow_map", .type = GFX_IMAGETYPE_2D },
+            [0] = { .name = "bcolor_map", .image_type = GFX_IMAGETYPE_2D },
+            [1] = { .name = "normal_map", .image_type = GFX_IMAGETYPE_2D },
+            [2] = { .name = "mtlrgn_map", .image_type = GFX_IMAGETYPE_2D },
+            [3] = { .name = "shadow_map", .image_type = GFX_IMAGETYPE_2D },
         },
         .vs.source = static_vs->source,
         .fs.source = direct_fs->source,
@@ -184,7 +184,7 @@ renderer renderer_create(renderer_params* params)
             }
         },
         .fs.images = {
-            [0] = { .name = "tex", .type = GFX_IMAGETYPE_2D },
+            [0] = { .name = "tex", .image_type = GFX_IMAGETYPE_2D },
         },
         .vs.source = fullscreen_vs->source,
         .fs.source = texture_blur_fs->source,
@@ -203,7 +203,7 @@ renderer renderer_create(renderer_params* params)
             }
         },
         .fs.images = {
-            [0] = { .name = "probe", .type = GFX_IMAGETYPE_CUBE },
+            [0] = { .name = "probe", .image_type = GFX_IMAGETYPE_CUBE },
         },
         .vs.source = prbdbg_vs->source,
         .fs.source = prbdbg_fs->source,
@@ -212,7 +212,7 @@ renderer renderer_create(renderer_params* params)
     /* Shader for transforming cubemap to octahedral */
     gfx_shader probe_trans_shd = gfx_make_shader(&(gfx_shader_desc){
         .fs.images = {
-            [0] = { .name = "probe", .type = GFX_IMAGETYPE_CUBE },
+            [0] = { .name = "probe", .image_type = GFX_IMAGETYPE_CUBE },
         },
         .vs.source = fullscreen_vs->source,
         .fs.source = cubetoocta_fs->source,
@@ -242,14 +242,12 @@ renderer renderer_create(renderer_params* params)
         },
         .shader = default_shd,
         .index_type = GFX_INDEXTYPE_UINT32,
-        .depth_stencil = {
-            .depth_compare_func = GFX_COMPAREFUNC_LESS_EQUAL,
-            .depth_write_enabled = true,
+        .depth = {
+            .compare = GFX_COMPAREFUNC_LESS_EQUAL,
+            .write_enabled = true,
         },
-        .rasterizer = {
-            .cull_mode = GFX_CULLMODE_BACK,
-            .face_winding = GFX_FACEWINDING_CCW,
-        }
+        .cull_mode = GFX_CULLMODE_BACK,
+        .face_winding = GFX_FACEWINDING_CCW,
     });
 
     /* Pipeline object for the shadowmap pass */
@@ -262,18 +260,16 @@ renderer renderer_create(renderer_params* params)
         },
         .shader = shadow_shd,
         .index_type = GFX_INDEXTYPE_UINT32,
-        .depth_stencil = {
-            .depth_compare_func = GFX_COMPAREFUNC_LESS_EQUAL,
-            .depth_write_enabled = true,
+        .depth = {
+            .compare = GFX_COMPAREFUNC_LESS_EQUAL,
+            .write_enabled = true,
         },
-        .blend = {
-            .color_format = GFX_PIXELFORMAT_RGBA32F,
+        .colors[0] = {
+            .pixel_format = GFX_PIXELFORMAT_RGBA32F,
         },
-        .rasterizer = {
-            .cull_mode = GFX_CULLMODE_FRONT,
-            .face_winding = GFX_FACEWINDING_CCW,
-            .sample_count = 1
-        }
+        .cull_mode = GFX_CULLMODE_FRONT,
+        .face_winding = GFX_FACEWINDING_CCW,
+        .sample_count = 1
     });
 
     /* Pipeline object for texture blurring passes */
@@ -285,16 +281,14 @@ renderer renderer_create(renderer_params* params)
             }
         },
         .shader = texture_blur_shd,
-        .depth_stencil = {
-            .depth_write_enabled = false,
+        .depth = {
+            .write_enabled = false,
+            .pixel_format = GFX_PIXELFORMAT_NONE,
         },
-        .blend = {
-            .color_format = GFX_PIXELFORMAT_RGBA32F,
-            .depth_format = GFX_PIXELFORMAT_NONE,
+        .colors[0] = {
+            .pixel_format = GFX_PIXELFORMAT_RGBA32F,
         },
-        .rasterizer = {
-            .sample_count = 1
-        }
+        .sample_count = 1
     });
 
     /* Shadowmap pass */
@@ -332,14 +326,12 @@ renderer renderer_create(renderer_params* params)
         },
         .shader = probe_debug_shd,
         .index_type = GFX_INDEXTYPE_UINT32,
-        .depth_stencil = {
-            .depth_compare_func = GFX_COMPAREFUNC_LESS_EQUAL,
-            .depth_write_enabled = true,
+        .depth = {
+            .compare = GFX_COMPAREFUNC_LESS_EQUAL,
+            .write_enabled = true,
         },
-        .rasterizer = {
-            .cull_mode = GFX_CULLMODE_BACK,
-            .face_winding = GFX_FACEWINDING_CCW,
-        }
+        .cull_mode = GFX_CULLMODE_BACK,
+        .face_winding = GFX_FACEWINDING_CCW,
     });
 
     /* Pipeline object for the cube to octahedral map pass */
@@ -376,7 +368,7 @@ renderer renderer_create(renderer_params* params)
         probe_cubemap_pass[i] = gfx_make_pass(&(gfx_pass_desc){
             .color_attachments[0] = {
                 .image = probe_color_img,
-                .face = i,
+                .slice = i,
             },
             .depth_stencil_attachment = {
                 .image = probe_depth_img,
@@ -388,7 +380,7 @@ renderer renderer_create(renderer_params* params)
     gfx_image fallback_tex = gfx_make_image(&(gfx_image_desc){
         .width = 1,
         .height = 1,
-        .content.subimage[0][0] = {
+        .data.subimage[0][0] = {
             .ptr = (unsigned char[]){255, 0, 255},
             .size = 4,
         }
@@ -402,21 +394,27 @@ renderer renderer_create(renderer_params* params)
         -0.5f, -0.5f, 0.5f,
     };
     gfx_buffer quad_vbuf = gfx_make_buffer(&(gfx_buffer_desc){
-        .size = sizeof(quad_verts),
-        .content = quad_verts
+        .data = {
+            .ptr = quad_verts,
+            .size = sizeof(quad_verts)
+        }
     });
 
     /* Internal sphere geometry */
     void* sph_verts; uint32_t* sph_indcs; size_t sph_num_verts, sph_num_indcs;
     generate_uv_sphere(&sph_verts, &sph_num_verts, &sph_indcs, &sph_num_indcs, 0.25f, 32, 32);
     gfx_buffer sphere_vbuf = gfx_make_buffer(&(gfx_buffer_desc){
-        .size = (3 + 3 + 2 + 4) * sizeof(float) * sph_num_verts,
-        .content = sph_verts,
+        .data = {
+            .ptr = sph_verts,
+            .size = (3 + 3 + 2 + 4) * sizeof(float) * sph_num_verts,
+        }
     });
     gfx_buffer sphere_ibuf = gfx_make_buffer(&(gfx_buffer_desc){
         .type = GFX_BUFFERTYPE_INDEXBUFFER,
-        .size = sizeof(sph_indcs) * sph_num_indcs,
-        .content = sph_indcs,
+        .data = {
+            .ptr = sph_indcs,
+            .size = sizeof(sph_indcs) * sph_num_indcs,
+        }
     });
     free(sph_verts); free(sph_indcs);
 
@@ -546,8 +544,8 @@ static void render_scene(renderer r, renderer_scene* rs, mat4 view, mat4 proj)
                 .has_mtlrgn_map = has_mtlrgn_map,
                 .lightsp_mat    = lightsp_mat,
             };
-            gfx_apply_uniforms(GFX_SHADERSTAGE_VS, 0, &vs_params, sizeof(vs_params));
-            gfx_apply_uniforms(GFX_SHADERSTAGE_FS, 0, &fs_params, sizeof(fs_params));
+            gfx_apply_uniforms(GFX_SHADERSTAGE_VS, 0, &(gfx_range){&vs_params, sizeof(vs_params)});
+            gfx_apply_uniforms(GFX_SHADERSTAGE_FS, 0, &(gfx_range){&fs_params, sizeof(fs_params)});
             /* Perform the draw call */
             gfx_draw(rp->base_element, rp->num_elements, 1);
         }
@@ -567,7 +565,7 @@ static void render_shadow_map(renderer r, renderer_scene* rs)
     gfx_begin_pass(r->shadow_pass, &(gfx_pass_action){
         .colors[0] = {
             .action = GFX_ACTION_CLEAR,
-            .val = { 0.0f, 0.0f, 0.0f, 1.0f }
+            .value = { 0.0f, 0.0f, 0.0f, 1.0f }
         }
     });
     gfx_apply_pipeline(r->shadow_pip);
@@ -590,7 +588,7 @@ static void render_shadow_map(renderer r, renderer_scene* rs)
                 .view = view,
                 .proj = proj,
             };
-            gfx_apply_uniforms(GFX_SHADERSTAGE_VS, 0, &vs_params, sizeof(vs_params));
+            gfx_apply_uniforms(GFX_SHADERSTAGE_VS, 0, &(gfx_range){&vs_params, sizeof(vs_params)});
             /* Perform the draw call */
             gfx_draw(rp->base_element, rp->num_elements, 1);
         }
@@ -606,11 +604,11 @@ static void render_shadow_map(renderer r, renderer_scene* rs)
         gfx_begin_pass(pass, &(gfx_pass_action){
             .colors[0] = {
                 .action = GFX_ACTION_CLEAR,
-                .val = { 0.0f, 0.0f, 0.0f, 0.0f }
+                .value = { 0.0f, 0.0f, 0.0f, 0.0f }
             }
         });
         gfx_apply_pipeline(r->tex_blur_pip);
-        gfx_apply_uniforms(GFX_SHADERSTAGE_FS, 0, &dir, sizeof(dir));
+        gfx_apply_uniforms(GFX_SHADERSTAGE_FS, 0, &(gfx_range){&dir, sizeof(dir)});
         gfx_apply_bindings(&(gfx_bindings){
             .vertex_buffers[0] = r->quad_vbuf,
             .fs_images = { [0] = input }
@@ -627,7 +625,7 @@ static void render_probe_cubemap(renderer r, renderer_scene* rs, vec3 probe_pos)
         gfx_begin_pass(r->probe_cubemap_pass[face], &(gfx_pass_action){
             .colors[0] = {
                 .action = GFX_ACTION_CLEAR,
-                .val = { 0.0f, 0.0f, 0.0f, 1.0f }
+                .value = { 0.0f, 0.0f, 0.0f, 1.0f }
             },
         });
         vec3 center_and_up[GFX_CUBEFACE_NUM][2] = {
@@ -662,7 +660,7 @@ static void render_probe_visualization(renderer r, vec3 probe_pos, mat4 view, ma
     });
     mat4 mdl = mat4_translation(probe_pos);
     mat4 mvp = mat4_mul_mat4(mat4_mul_mat4(proj, view), mdl);
-    gfx_apply_uniforms(GFX_SHADERSTAGE_VS, 0, &mvp, sizeof(mat4));
+    gfx_apply_uniforms(GFX_SHADERSTAGE_VS, 0, &(gfx_range){&mvp, sizeof(mat4)});
     gfx_draw(0, r->sphere_num_elem, 1);
     gfx_end_pass();
 }
@@ -702,7 +700,7 @@ void renderer_frame(renderer r, renderer_inputs ri)
     gfx_begin_default_pass(&(gfx_pass_action){
         .colors[0] = {
             .action = GFX_ACTION_CLEAR,
-            .val = { 0.0f, 0.0f, 0.0f, 1.0f }
+            .value = { 0.0f, 0.0f, 0.0f, 1.0f }
         }
     }, r->params.width, r->params.height);
     render_scene(r, rs, view, proj);

@@ -136,7 +136,7 @@ text_renderer text_renderer_create()
         .fs.images = {
             [0] = {
                 .name = "tex",
-                .type = GFX_IMAGETYPE_2D
+                .image_type = GFX_IMAGETYPE_2D
             }
         },
         .vs.source = TEXT_VSH,
@@ -152,20 +152,20 @@ text_renderer text_renderer_create()
         },
         .shader = shd,
         .index_type = GFX_INDEXTYPE_UINT16,
-        .depth_stencil = {
-            .depth_compare_func = GFX_COMPAREFUNC_ALWAYS,
-            .depth_write_enabled = false,
+        .depth = {
+            .compare = GFX_COMPAREFUNC_ALWAYS,
+            .write_enabled = false,
         },
-        .rasterizer = {
-            .cull_mode = GFX_CULLMODE_BACK,
-            .face_winding = GFX_FACEWINDING_CCW,
-        },
-        .blend = {
-            .enabled = true,
-            .src_factor_rgb = GFX_BLENDFACTOR_SRC_ALPHA,
-            .dst_factor_rgb = GFX_BLENDFACTOR_ONE_MINUS_SRC_ALPHA,
-            .src_factor_alpha = GFX_BLENDFACTOR_SRC_ALPHA,
-            .dst_factor_alpha = GFX_BLENDFACTOR_ONE_MINUS_SRC_ALPHA
+        .cull_mode = GFX_CULLMODE_BACK,
+        .face_winding = GFX_FACEWINDING_CCW,
+        .colors[0] = {
+            .blend = {
+                .enabled = true,
+                .src_factor_rgb = GFX_BLENDFACTOR_SRC_ALPHA,
+                .dst_factor_rgb = GFX_BLENDFACTOR_ONE_MINUS_SRC_ALPHA,
+                .src_factor_alpha = GFX_BLENDFACTOR_SRC_ALPHA,
+                .dst_factor_alpha = GFX_BLENDFACTOR_ONE_MINUS_SRC_ALPHA
+            }
         }
     });
 
@@ -309,8 +309,8 @@ void text_draw(text_renderer tr, text_draw_desc* desc)
     }
 
     /* Upload to GPU */
-    gfx_update_buffer(tr->vbuf, verts, num_verts * sizeof(*verts));
-    gfx_update_buffer(tr->ibuf, indcs, num_indcs * sizeof(*indcs));
+    gfx_update_buffer(tr->vbuf, &(gfx_range){verts, num_verts * sizeof(*verts)});
+    gfx_update_buffer(tr->ibuf, &(gfx_range){indcs, num_indcs * sizeof(*indcs)});
     free(verts); free(indcs);
 
     /* Prepare parameters */
@@ -341,8 +341,8 @@ void text_draw(text_renderer tr, text_draw_desc* desc)
         .index_buffer      = tr->ibuf,
         .fs_images[0]      = desc->fnt->atlas_img,
     });
-    gfx_apply_uniforms(GFX_SHADERSTAGE_VS, 0, &vparams, sizeof(vparams));
-    gfx_apply_uniforms(GFX_SHADERSTAGE_FS, 0, &fparams, sizeof(fparams));
+    gfx_apply_uniforms(GFX_SHADERSTAGE_VS, 0, &(gfx_range){&vparams, sizeof(vparams)});
+    gfx_apply_uniforms(GFX_SHADERSTAGE_FS, 0, &(gfx_range){&fparams, sizeof(fparams)});
     gfx_draw(0, num_indcs, 1);
     gfx_end_pass();
     gfx_commit();
